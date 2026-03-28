@@ -110,6 +110,23 @@
 <script src="../shared/client.js"></script>
 <script>
 let orders=[], suppliers=[], currentOrderId=null;
+function mountSafeImages(root){
+  root.querySelectorAll('[data-safe-image]').forEach(host=>{
+    const safe=sanitizeImageUrl(host.dataset.safeImage||'');
+    if(!safe) return;
+    const img=document.createElement('img');
+    img.src=safe;
+    img.style.width='36px';
+    img.style.height='36px';
+    img.style.borderRadius='6px';
+    img.style.objectFit='cover';
+    img.style.border='1px solid var(--border)';
+    img.style.flexShrink='0';
+    if(host.dataset.alt) img.alt=host.dataset.alt;
+    host.textContent='';
+    host.appendChild(img);
+  });
+}
 
 (async()=>{
   const profile=await authGuard();
@@ -216,7 +233,8 @@ function openModal(id){
           <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;text-align:right">Сумма</th>
         </tr></thead>
         <tbody>${items.map((item,idx)=>{
-          const photo=item.photo?`<img src="${item.photo}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;border:1px solid var(--border);flex-shrink:0">`:`<div style="width:36px;height:36px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px">📦</div>`;
+          const safePhoto=sanitizeImageUrl(item.photo||'');
+          const photo=safePhoto?`<span data-safe-image="${safePhoto}" data-alt="${esc(item.productName||'photo')}"></span>`:`<div style="width:36px;height:36px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px">📦</div>`;
           return`<tr style="${idx>0?'border-top:1px solid var(--border)':''}">
             <td style="padding:10px 12px"><div style="display:flex;align-items:center;gap:10px">${photo}
               <div><div style="font-weight:600;font-size:13px">${esc(item.productName||'—')}</div>
@@ -230,6 +248,7 @@ function openModal(id){
         }).join('')}</tbody>
       </table>
     </div>`;
+  mountSafeImages(document.getElementById('modal-items-wrap'));
 
   // Supplier comment
   const supComWrap=document.getElementById('modal-sup-comment-wrap');

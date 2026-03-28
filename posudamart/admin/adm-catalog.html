@@ -301,6 +301,7 @@ function renderSearch(term) {
   document.getElementById('page-title').textContent = `Найдено: ${found.length}`;
   if (!found.length) { content.innerHTML = '<div class="empty"><div class="empty-icon">🔍</div>Ничего не найдено</div>'; return; }
   content.innerHTML = `<div class="photo-grid">${found.map(p => productCard(p)).join('')}</div>`;
+  mountSafeImages(content);
 }
 
 // ── CATALOG LEVELS ──
@@ -319,8 +320,8 @@ function renderSupplierTiles() {
   if (!active.length) { content.innerHTML = '<div class="empty"><div class="empty-icon">🏭</div>Нет активных поставщиков с товарами</div>'; return; }
   content.innerHTML = `<div class="sup-grid">${active.map(s => {
     const cnt = allProducts.filter(p => p.supplier_id === s.id).length;
-    const avatarInner = s.logo
-      ? `<img src="${esc(s.logo)}" alt="">`
+    const avatarInner = sanitizeImageUrl(s.logo||'')
+      ? `<span data-safe-image="${sanitizeImageUrl(s.logo||'')}" data-alt="${esc(s.name||'logo')}"></span>`
       : s.name.charAt(0).toUpperCase();
     return `<div class="sup-tile" onclick="openSupplier('${esc(s.id)}')">
       <div class="sup-avatar">${avatarInner}</div>
@@ -328,6 +329,7 @@ function renderSupplierTiles() {
       <div class="sup-tile-count">${cnt} товар${cnt===1?'':cnt<5?'а':'ов'}</div>
     </div>`;
   }).join('')}</div>`;
+  mountSafeImages(content);
 }
 
 window.openSupplier = (supId) => {
@@ -374,6 +376,7 @@ function renderSupplierProducts(supId) {
   });
 
   content.innerHTML = breadcrumb + sections;
+  mountSafeImages(content);
 }
 
 window.backToSuppliers = () => {
@@ -383,8 +386,8 @@ window.backToSuppliers = () => {
 };
 
 function productCard(p) {
-  const imgHtml = p.photo
-    ? `<img src="${esc(p.photo)}" alt="" loading="lazy">`
+  const imgHtml = sanitizeImageUrl(p.photo||'')
+    ? `<span data-safe-image="${sanitizeImageUrl(p.photo||'')}" data-alt="${esc(p.name||'photo')}" data-loading="lazy"></span>`
     : `<div class="photo-no-img">📦</div>`;
   return `<div class="photo-item" onclick="openQuickOrder('${esc(p.id)}')">
     ${imgHtml}
@@ -395,6 +398,19 @@ function productCard(p) {
   </div>`;
 }
 
+function mountSafeImages(root){
+  root.querySelectorAll('[data-safe-image]').forEach(host=>{
+    const safe=sanitizeImageUrl(host.dataset.safeImage||'');
+    if(!safe) return;
+    const img=document.createElement('img');
+    img.src=safe;
+    if(host.dataset.alt) img.alt=host.dataset.alt;
+    if(host.dataset.loading) img.loading=host.dataset.loading;
+    host.textContent='';
+    host.appendChild(img);
+  });
+}
+
 // ── QUICK ORDER MODAL ──
 window.openQuickOrder = (prodId) => {
   const p = allProducts.find(x => x.id === prodId);
@@ -403,7 +419,8 @@ window.openQuickOrder = (prodId) => {
 
   const img = document.getElementById('quick-photo-img');
   const ph  = document.getElementById('quick-photo-ph');
-  if (p.photo) { img.src = p.photo; img.style.display = 'block'; ph.style.display = 'none'; }
+  const safePhoto=sanitizeImageUrl(p.photo||'');
+  if (safePhoto) { img.src = safePhoto; img.style.display = 'block'; ph.style.display = 'none'; }
   else         { img.style.display = 'none'; ph.style.display = 'flex'; }
 
   document.getElementById('quick-name').textContent = p.name;

@@ -143,6 +143,23 @@
 <script>
 
 let orders=[], suppliers=[], products=[];
+function mountSafeImages(root){
+  root.querySelectorAll('[data-safe-image]').forEach(host=>{
+    const safe=sanitizeImageUrl(host.dataset.safeImage||'');
+    if(!safe) return;
+    const img=document.createElement('img');
+    img.src=safe;
+    if(host.dataset.alt) img.alt=host.dataset.alt;
+    img.style.width='36px';
+    img.style.height='36px';
+    img.style.borderRadius='8px';
+    img.style.objectFit='cover';
+    img.style.border='1px solid var(--border)';
+    img.style.flexShrink='0';
+    host.textContent='';
+    host.appendChild(img);
+  });
+}
 
 async function onAdminLoggedIn() {
   const [o,s,p]=await Promise.all([
@@ -195,8 +212,9 @@ function render() {
     const sup = getSup(supId);
     const grpTotal = grpOrders.reduce((s,o) => s + (o.items||[]).reduce((ss,i) => ss+Number(i.totalPrice||0), 0), 0);
     const isOpen = expandedSups.has(supId);
-    const logo = sup.logo
-      ? `<img src="${sup.logo}" style="width:36px;height:36px;border-radius:8px;object-fit:cover;border:1px solid var(--border);flex-shrink:0">`
+    const safeLogo = sanitizeImageUrl(sup.logo||'');
+    const logo = safeLogo
+      ? `<span data-safe-image="${safeLogo}" data-alt="${esc(sup.name||'logo')}"></span>`
       : `<div style="width:36px;height:36px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">🏭</div>`;
 
     html += `
@@ -243,6 +261,7 @@ function render() {
     </div>`;
   }
   container.innerHTML = html;
+  mountSafeImages(container);
 }
 
 function toggleSup(supId) {
@@ -289,8 +308,9 @@ function openOrderModal(id) {
         <tbody id="modal-tbody">
           ${items.map((item, idx) => {
             const prod = getProd(item.productId||'');
-            const photo = (prod.photo || item._photo)
-              ? `<img src="${prod.photo||item._photo}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;border:1px solid var(--border);flex-shrink:0">`
+            const safePhoto = sanitizeImageUrl(prod.photo||item._photo||'');
+            const photo = safePhoto
+              ? `<span data-safe-image="${safePhoto}" data-alt="${esc(item.productName||'photo')}"></span>`
               : `<div style="width:36px;height:36px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">📦</div>`;
             return `<tr data-idx="${idx}" style="${idx>0?'border-top:1px solid var(--border)':''}">
               <td style="padding:10px 12px">
@@ -320,6 +340,7 @@ function openOrderModal(id) {
       </table>
     </div>
   ` : '<div class="empty"><div class="empty-icon">📦</div>Товаров нет</div>';
+  mountSafeImages(document.getElementById('modal-items-wrap'));
 
   // Total
   document.getElementById('modal-total').innerHTML = `Итого: <span id="modal-total-sum" style="color:var(--accent)">${fmtMoney(total)}</span>`;
