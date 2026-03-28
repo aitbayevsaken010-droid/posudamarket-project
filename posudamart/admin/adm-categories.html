@@ -7,20 +7,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <link rel="stylesheet" href="../shared/admin.css">
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script>
-// Ultra-fast pre-check: hide spinner immediately if we have cached session
-(function(){
-  const role = localStorage.getItem('adm_role');
-  const id = localStorage.getItem('adm_id');
-  if (role === 'admin' && id) {
-    // Will be verified properly by adminAuthGuard, but hide spinner now
-    const style = document.createElement('style');
-    style.textContent = '#auth-loading{display:none!important}#main-header,#main-content{display:block!important}';
-    document.head.appendChild(style);
-  }
-})();
-</script>
-
 </head>
 <body>
 

@@ -87,24 +87,9 @@ async function resizeImage(file,max=900){
 // ══ ADMIN AUTH GUARD ══
 async function adminAuthGuard() {
   try {
-    const cachedRole = localStorage.getItem('adm_role');
-    const cachedId   = localStorage.getItem('adm_id');
     const cachedEmail = localStorage.getItem('adm_email') || '';
+    if (cachedEmail) setAdminEmail(cachedEmail);
 
-    if (cachedRole === 'admin' && cachedId) {
-      // Показываем UI немедленно из кэша
-      currentAdminUser = { id: cachedId, email: cachedEmail };
-      setAdminEmail(cachedEmail);
-      showAdminShell();
-      document.getElementById('login-overlay').style.display = 'none';
-
-      // Проверяем сессию в фоне — не блокируем загрузку данных
-      _validateSessionBackground(cachedId);
-
-      return currentAdminUser;
-    }
-
-    // Кэша нет — полная проверка
     const { data: { session } } = await sb.auth.getSession();
     if (!session) { showLoginOverlay(); return null; }
 
@@ -124,7 +109,9 @@ async function adminAuthGuard() {
     currentAdminUser = session.user;
     setAdminEmail(session.user.email);
     showAdminShell();
-    document.getElementById('login-overlay').style.display = 'none';
+    const overlay = document.getElementById('login-overlay');
+    if (overlay) overlay.style.display = 'none';
+    _validateSessionBackground(session.user.id);
     return session.user;
   } catch(e) {
     showLoginOverlay();
@@ -132,23 +119,31 @@ async function adminAuthGuard() {
   }
 }
 
-// Фоновая проверка сессии — редиректит только если сессия точно истекла
-async function _validateSessionBackground(cachedId) {
+// Фоновая проверка сессии после успешной авторизации
+async function _validateSessionBackground(authenticatedId) {
+  if (!authenticatedId) return;
   try {
     const { data: { session } } = await sb.auth.getSession();
     if (!session) {
-      localStorage.removeItem('adm_role');
-      localStorage.removeItem('adm_id');
-      localStorage.removeItem('adm_email');
-      window.location.href = '../index.html';
+      if (currentAdminUser && currentAdminUser.id === authenticatedId) {
+        localStorage.removeItem('adm_role');
+        localStorage.removeItem('adm_id');
+        localStorage.removeItem('adm_email');
+        await sb.auth.signOut();
+        if (!window.location.pathname.endsWith('/index.html') && !window.location.pathname.endsWith('/')) {
+          window.location.href = '../index.html';
+        }
+      }
       return;
     }
+    if (session.user.id !== authenticatedId) return;
     // Обновляем реальные данные пользователя
     currentAdminUser = session.user;
+    localStorage.setItem('adm_id', session.user.id);
     localStorage.setItem('adm_email', session.user.email || '');
     setAdminEmail(session.user.email);
   } catch(e) {
-    // Сеть недоступна — не редиректим, оставляем работать из кэша
+    // Сеть недоступна — не редиректим, сохранит текущую страницу
   }
 }
 
