@@ -170,8 +170,9 @@ function render() {
   }
   tbody.innerHTML = products.map(p => {
     const cat = categories.find(c => c.id === p.category_id)?.name || '—';
-    const photo = p.photo
-      ? `<img class="thumb" src="${p.photo}" alt="">`
+    const safePhoto = sanitizeImageUrl(p.photo||'');
+    const photo = safePhoto
+      ? `<span data-safe-image="${safePhoto}" data-alt="${esc(p.name||'photo')}"></span>`
       : `<div class="thumb-ph">📦</div>`;
     return `<tr>
       <td>${photo}</td>
@@ -185,6 +186,14 @@ function render() {
       </div></td>
     </tr>`;
   }).join('');
+  tbody.querySelectorAll('[data-safe-image]').forEach(host=>{
+    const img=document.createElement('img');
+    img.className='thumb';
+    img.src=host.dataset.safeImage;
+    if(host.dataset.alt) img.alt=host.dataset.alt;
+    host.textContent='';
+    host.appendChild(img);
+  });
 }
 
 // Photo

@@ -49,6 +49,15 @@ function fmtMoney(n){return Number(n||0).toLocaleString('ru-RU',{minimumFraction
 function fmtNum(n){return Number(n||0).toLocaleString('ru-RU')}
 function uid(){return crypto.randomUUID()}
 function esc(s){const d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML}
+function sanitizeImageUrl(url){
+  const raw=String(url||'').trim();
+  if(!raw) return '';
+  if(raw.startsWith('https://')) return raw;
+  if(/^data:image\/(?:png|jpeg|jpg|webp|gif|bmp|svg\+xml);base64,[a-z0-9+/=\s]+$/i.test(raw)){
+    return raw.replace(/\s+/g,'');
+  }
+  return '';
+}
 function statusBadge(s){
   if(s==='Оформлен')return`<span class="badge badge-done">Оформлен</span>`;
   if(s==='Закрыт')return`<span class="badge badge-closed">Закрыт</span>`;

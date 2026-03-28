@@ -108,6 +108,23 @@
 <script src="../shared/supplier.js"></script>
 <script>
 let orders = [], clientOrders = [], activeTab = 'admin';
+function mountSafeImages(root){
+  root.querySelectorAll('[data-safe-image]').forEach(host=>{
+    const safe=sanitizeImageUrl(host.dataset.safeImage||'');
+    if(!safe) return;
+    const img=document.createElement('img');
+    img.src=safe;
+    img.style.width='36px';
+    img.style.height='36px';
+    img.style.borderRadius='6px';
+    img.style.objectFit='cover';
+    img.style.border='1px solid var(--border)';
+    img.style.flexShrink='0';
+    if(host.dataset.alt) img.alt=host.dataset.alt;
+    host.textContent='';
+    host.appendChild(img);
+  });
+}
 
 function switchTab(tab) {
   activeTab = tab;
@@ -193,8 +210,9 @@ function openAdminOrderModal(id) {
           <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;text-align:right">Сумма</th>
         </tr></thead>
         <tbody>${items.map((item,idx)=>{
-          const photo = item.photo
-            ? `<img src="${item.photo}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;border:1px solid var(--border);flex-shrink:0">`
+          const safePhoto = sanitizeImageUrl(item.photo||'');
+          const photo = safePhoto
+            ? `<span data-safe-image="${safePhoto}" data-alt="${esc(item.productName||'photo')}"></span>`
             : `<div style="width:36px;height:36px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">📦</div>`;
           return `<tr style="${idx>0?'border-top:1px solid var(--border)':''}">
             <td style="padding:10px 12px"><div style="display:flex;align-items:center;gap:10px">${photo}
@@ -208,6 +226,7 @@ function openAdminOrderModal(id) {
         }).join('')}</tbody>
       </table>
     </div>` : '<div class="empty"><div class="empty-icon">📦</div>Товаров нет</div>';
+  mountSafeImages(document.getElementById('clt-modal-items'));
 
   document.getElementById('clt-modal-client-comment-wrap').style.display = 'none';
   document.getElementById('clt-modal-reply-wrap').style.display = 'none';
@@ -301,7 +320,7 @@ function openCltModal(id) {
           <tr style="${idx>0?'border-top:1px solid var(--border)':''}">
             <td style="padding:10px 12px">
               <div style="display:flex;align-items:center;gap:10px">
-                ${item.photo?`<img src="${item.photo}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;border:1px solid var(--border);flex-shrink:0">`:`<div style="width:36px;height:36px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">📦</div>`}
+                ${sanitizeImageUrl(item.photo||'')?`<span data-safe-image="${sanitizeImageUrl(item.photo||'')}" data-alt="${esc(item.productName||'photo')}"></span>`:`<div style="width:36px;height:36px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">📦</div>`}
                 <div><div style="font-weight:600;font-size:13px">${esc(item.productName||'—')}</div>
                 ${item.sku?`<div style="font-size:11px;color:var(--muted);font-family:var(--mono)">${esc(item.sku)}</div>`:''}</div>
               </div>
@@ -322,6 +341,7 @@ function openCltModal(id) {
         </tbody>
       </table>
     </div>`;
+  mountSafeImages(document.getElementById('clt-modal-items'));
 
   // Client comment
   const ccWrap = document.getElementById('clt-modal-client-comment-wrap');

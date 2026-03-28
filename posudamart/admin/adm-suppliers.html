@@ -195,7 +195,8 @@ function render() {
   if(!filtered.length){tbody.innerHTML='<tr><td colspan="8" class="empty"><div class="empty-icon">🏭</div>Поставщики не найдены</td></tr>';return}
   tbody.innerHTML=filtered.map(s=>{
     const cnt=products.filter(p=>p.supplier_id===s.id).length;
-    const logo=s.logo?`<img class="thumb" src="${s.logo}" alt="">`:'<div class="thumb-ph">🏭</div>';
+    const safeLogo=sanitizeImageUrl(s.logo||'');
+    const logo=safeLogo?`<span data-safe-image="${safeLogo}" data-alt="${esc(s.name||'logo')}"></span>`:'<div class="thumb-ph">🏭</div>';
     return`<tr>
       <td>${logo}</td>
       <td><strong>${esc(s.name)}</strong><br><span style="font-size:11px;color:var(--muted)">${esc(s.address||'')}</span>${!s.user_id?'<br><span style="font-size:10px;color:var(--warning);font-weight:600">⚠ Нет аккаунта</span>':''}</td>
@@ -209,6 +210,14 @@ function render() {
       </div></td>
     </tr>`;
   }).join('');
+  tbody.querySelectorAll('[data-safe-image]').forEach(host=>{
+    const img=document.createElement('img');
+    img.className='thumb';
+    img.src=host.dataset.safeImage;
+    if(host.dataset.alt) img.alt=host.dataset.alt;
+    host.textContent='';
+    host.appendChild(img);
+  });
 }
 
 // ── Moderate ──
