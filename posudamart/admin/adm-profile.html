@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin — Профиль</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <link rel="stylesheet" href="../shared/admin.css">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+// Ultra-fast pre-check: hide spinner immediately if we have cached session
+(function(){
+  const role = localStorage.getItem('adm_role');
+  const id = localStorage.getItem('adm_id');
+  if (role === 'admin' && id) {
+    // Will be verified properly by adminAuthGuard, but hide spinner now
+    const style = document.createElement('style');
+    style.textContent = '#auth-loading{display:none!important}#main-header,#main-content{display:block!important}';
+    document.head.appendChild(style);
+  }
+})();
+</script>
+
+</head>
+<body>
+
+<div id="auth-loading" style="position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9998">
+  <div style="width:32px;height:32px;border:3px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite"></div>
+</div>
+<div id="toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:10px 22px;border-radius:30px;font-size:13px;font-weight:600;z-index:9999;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap"></div>
+
+<div id="login-overlay" style="position:fixed;inset:0;background:var(--bg);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--surface);border:1px solid var(--border2);border-radius:20px;padding:36px 32px;width:100%;max-width:400px;box-shadow:0 32px 80px rgba(0,0,0,.5)">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:36px;margin-bottom:10px">🏺</div>
+      <div style="font-size:20px;font-weight:800">Posudamart Admin</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">Панель администратора</div>
+    </div>
+    <div id="login-error" style="display:none;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:600;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;margin-bottom:14px"></div>
+
+    <!-- Step 1: Email -->
+    <div id="login-step-email">
+      <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:14px">
+        <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Email администратора</label>
+        <input type="email" id="login-email" placeholder="admin@example.com"
+          style="background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);padding:11px 14px;font-size:15px;outline:none;width:100%;font-family:inherit;transition:border-color .15s"
+          onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border2)'"
+          onkeydown="if(event.key==='Enter')adminSendOtp()">
+      </div>
+      <button onclick="adminSendOtp()" id="btn-send-otp"
+        style="width:100%;padding:13px;border-radius:12px;border:none;cursor:pointer;font-size:15px;font-weight:700;background:linear-gradient(135deg,#4f6ef7,#6366f1);color:#fff;font-family:inherit;transition:opacity .15s">
+        Получить код →
+      </button>
+    </div>
+
+    <!-- Step 2: OTP -->
+    <div id="login-step-otp" style="display:none">
+      <div style="font-size:13px;color:var(--muted);text-align:center;margin-bottom:14px">
+        Код отправлен на <b id="otp-email-shown" style="color:var(--text)"></b>
+      </div>
+      <div id="login-otp-wrap" style="display:flex;gap:8px;justify-content:center;margin-bottom:14px">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+      </div>
+      <button onclick="adminVerifyOtp()" id="btn-verify-otp"
+        style="width:100%;padding:13px;border-radius:12px;border:none;cursor:pointer;font-size:15px;font-weight:700;background:linear-gradient(135deg,#4f6ef7,#6366f1);color:#fff;font-family:inherit;margin-bottom:8px">
+        Войти →
+      </button>
+      <div style="text-align:center;font-size:12px;color:var(--muted);margin-top:6px">
+        <button id="btn-resend-otp" onclick="adminResendOtp()" disabled
+          style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">
+          Отправить снова (<span id="resend-timer">60</span>с)
+        </button>
+      </div>
+      <button onclick="document.getElementById('login-step-otp').style.display='none';document.getElementById('login-step-email').style.display='block'"
+        style="width:100%;padding:10px;border-radius:10px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;margin-top:8px">
+        ← Другой email
+      </button>
+    </div>
+  </div>
+</div>
+
+<header class="topbar" id="main-header" style="display:none">
+  <div class="brand-group">
+    <a href="adm-dashboard.html" class="brand"><div class="brand-dot"></div>Posudamart</a>
+    <span class="admin-badge">👑 Админ</span>
+  </div>
+  <nav class="nav">
+    <a href="adm-dashboard.html" class="nav-btn">🏠 Главная</a>
+    <a href="adm-suppliers.html" class="nav-btn">🏭 Поставщики</a>
+    <a href="adm-categories.html" class="nav-btn">🗂 Категории</a>
+    <a href="adm-products.html" class="nav-btn">📦 Товары</a>
+    <a href="adm-catalog.html" class="nav-btn">🛍 Каталог</a>
+    <a href="adm-orders.html" class="nav-btn">📋 Заказы</a>
+    <a href="adm-history.html" class="nav-btn">📅 История</a>
+    <a href="adm-profile.html" class="nav-btn active">👤 Профиль</a>
+  </nav>
+  <div class="topbar-right">
+    <span class="user-name" id="admin-email">—</span>
+    <button class="btn-logout" onclick="adminSignOut()">Выйти</button>
+  </div>
+</header>
+
+<main class="container" id="main-content" style="display:none">
+
+  <div class="page-head"><h1>Мой профиль</h1></div>
+  <div style="max-width:480px;display:flex;flex-direction:column;gap:16px">
+    <div class="panel">
+      <div class="panel-title">Аккаунт</div>
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:4px">
+        <div id="avatar" style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#f59e0b,#4f6ef7);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;color:#fff;flex-shrink:0">А</div>
+        <div>
+          <div style="font-weight:800;font-size:16px" id="email-display">—</div>
+          <span style="background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;color:#f59e0b;display:inline-block;margin-top:4px">👑 Администратор</span>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Сменить Email</div>
+      <div class="field"><label>Новый Email</label><input type="email" id="new-email" placeholder="new@example.com"></div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="btn-change-email" style="width:auto">✉️ Сменить Email</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">После смены придёт письмо с подтверждением.</div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Сменить пароль</div>
+      <div class="form-grid cols1">
+        <div class="field"><label>Новый пароль</label>
+          <div style="position:relative"><input type="password" id="new-pass" placeholder="Минимум 6 символов" style="width:100%;padding-right:44px">
+          <button type="button" onclick="const i=this.previousElementSibling;i.type=i.type==='password'?'text':'password';this.textContent=i.type==='password'?'👁':'🙈'" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--muted);font-size:16px">👁</button></div></div>
+        <div class="field"><label>Повтори пароль</label>
+          <div style="position:relative"><input type="password" id="new-pass2" placeholder="Повтори пароль" style="width:100%;padding-right:44px">
+          <button type="button" onclick="const i=this.previousElementSibling;i.type=i.type==='password'?'text':'password';this.textContent=i.type==='password'?'👁':'🙈'" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--muted);font-size:16px">👁</button></div></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="btn-change-pass" style="width:auto">🔒 Сменить пароль</button>
+      </div>
+    </div>
+
+    <!-- Тема оформления -->
+    <div class="panel">
+      <div class="panel-title">🎨 Тема оформления</div>
+      <div id="theme-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px"></div>
+      <div style="font-size:12px;color:var(--muted);margin-top:12px">Тема применяется сразу и сохраняется в браузере.</div>
+    </div>
+
+    <button class="btn btn-danger" onclick="adminSignOut()" style="width:100%;justify-content:center">🚪 Выйти из аккаунта</button>
+  </div>
+</main>
+
+<script src="../shared/admin.js"></script>
+<script>
+async function onAdminLoggedIn() {
+  const email = currentAdminUser.email || '—';
+  document.getElementById('email-display').textContent = email;
+  document.getElementById('avatar').textContent = (email[0]||'А').toUpperCase();
+  renderThemePicker();
+}
+
+function renderThemePicker() {
+  const current = localStorage.getItem('adm_theme') || 'blue';
+  const grid = document.getElementById('theme-grid');
+  grid.innerHTML = Object.entries(APP_THEMES).map(([key, t]) => `
+    <button onclick="pickTheme('${key}')" id="theme-btn-${key}" style="
+      display:flex;flex-direction:column;align-items:center;gap:8px;
+      padding:12px 8px;border-radius:12px;cursor:pointer;transition:all .15s;
+      border:2px solid ${key===current?t.accent:'var(--border)'};
+      background:${key===current?t.accent+'22':'var(--surface2)'};
+    ">
+      <div style="display:flex;gap:4px">
+        <div style="width:16px;height:16px;border-radius:50%;background:${t.bg};border:1px solid ${t.border2}"></div>
+        <div style="width:16px;height:16px;border-radius:50%;background:${t.accent}"></div>
+        <div style="width:16px;height:16px;border-radius:50%;background:${t.surface}"></div>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:${key===current?t.accent:'var(--muted)'}">
+        ${key===current?'✓ ':''}${t.label}
+      </span>
+    </button>
+  `).join('');
+}
+
+function pickTheme(key) {
+  saveTheme(key);
+  renderThemePicker();
+  showToast('✓ Тема изменена');
+}
+
+document.getElementById('btn-change-email').addEventListener('click',async()=>{
+  const email=document.getElementById('new-email').value.trim().toLowerCase();
+  if(!email||!email.includes('@'))return showToast('Введи корректный email',false);
+  const btn=document.getElementById('btn-change-email');
+  btn.disabled=true; btn.textContent='Отправляем...';
+  const{error}=await sb.auth.updateUser({email});
+  btn.disabled=false; btn.textContent='✉️ Сменить Email';
+  if(error)return showToast(error.message,false);
+  document.getElementById('new-email').value='';
+  showToast('✓ Письмо отправлено на '+email);
+});
+
+document.getElementById('btn-change-pass').addEventListener('click',async()=>{
+  const p1=document.getElementById('new-pass').value;
+  const p2=document.getElementById('new-pass2').value;
+  if(!p1)return showToast('Введи новый пароль',false);
+  if(p1.length<6)return showToast('Пароль минимум 6 символов',false);
+  if(p1!==p2)return showToast('Пароли не совпадают',false);
+  const btn=document.getElementById('btn-change-pass');
+  btn.disabled=true; btn.textContent='Сохраняем...';
+  const{error}=await sb.auth.updateUser({password:p1});
+  btn.disabled=false; btn.textContent='🔒 Сменить пароль';
+  if(error)return showToast(error.message,false);
+  document.getElementById('new-pass').value='';
+  document.getElementById('new-pass2').value='';
+  showToast('✓ Пароль изменён');
+});
+
+(async () => {
+  const user = await adminAuthGuard();
+  if (user) {
+    document.getElementById('main-header').style.display = '';
+    document.getElementById('main-content').style.display = '';
+    if (typeof onAdminLoggedIn === 'function') await onAdminLoggedIn();
+  }
+})();
+// OTP keyboard wiring
+(function() {
+  const boxes = document.querySelectorAll('#login-otp-wrap .otp-box');
+  boxes.forEach((box, i) => {
+    box.addEventListener('input', e => {
+      const v = e.target.value.replace(/\D/g,''); e.target.value = v;
+      if (v) { e.target.style.borderColor='var(--accent)'; e.target.style.background='rgba(79,110,247,0.08)'; if (i < 5) boxes[i+1].focus(); }
+      else { e.target.style.borderColor='var(--border2)'; e.target.style.background='var(--bg)'; }
+      if ([...boxes].every(b => b.value)) adminVerifyOtp();
+    });
+    box.addEventListener('keydown', e => {
+      if (e.key === 'Backspace' && !box.value && i > 0) { boxes[i-1].focus(); boxes[i-1].value = ''; boxes[i-1].style.borderColor='var(--border2)'; }
+    });
+    box.addEventListener('paste', e => {
+      e.preventDefault();
+      const paste = e.clipboardData.getData('text').replace(/\D/g,'').slice(0,6);
+      [...paste].forEach((ch,j) => { if(boxes[i+j]) { boxes[i+j].value=ch; boxes[i+j].style.borderColor='var(--accent)'; boxes[i+j].style.background='rgba(79,110,247,0.08)'; } });
+      if([...boxes].every(b=>b.value)) adminVerifyOtp();
+    });
+  });
+})();
+</script>
+</script>
+</body>
+</html>

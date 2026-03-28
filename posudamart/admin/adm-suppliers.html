@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin — Поставщики</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <link rel="stylesheet" href="../shared/admin.css">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+// Ultra-fast pre-check: hide spinner immediately if we have cached session
+(function(){
+  const role = localStorage.getItem('adm_role');
+  const id = localStorage.getItem('adm_id');
+  if (role === 'admin' && id) {
+    // Will be verified properly by adminAuthGuard, but hide spinner now
+    const style = document.createElement('style');
+    style.textContent = '#auth-loading{display:none!important}#main-header,#main-content{display:block!important}';
+    document.head.appendChild(style);
+  }
+})();
+</script>
+
+</head>
+<body>
+
+<div id="auth-loading" style="position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9998">
+  <div style="width:32px;height:32px;border:3px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite"></div>
+</div>
+<div id="toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:10px 22px;border-radius:30px;font-size:13px;font-weight:600;z-index:9999;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap"></div>
+
+<div id="login-overlay" style="position:fixed;inset:0;background:var(--bg);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--surface);border:1px solid var(--border2);border-radius:20px;padding:36px 32px;width:100%;max-width:400px;box-shadow:0 32px 80px rgba(0,0,0,.5)">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:36px;margin-bottom:10px">🏺</div>
+      <div style="font-size:20px;font-weight:800">Posudamart Admin</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">Панель администратора</div>
+    </div>
+    <div id="login-error" style="display:none;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:600;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;margin-bottom:14px"></div>
+
+    <!-- Step 1: Email -->
+    <div id="login-step-email">
+      <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:14px">
+        <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Email администратора</label>
+        <input type="email" id="login-email" placeholder="admin@example.com"
+          style="background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);padding:11px 14px;font-size:15px;outline:none;width:100%;font-family:inherit;transition:border-color .15s"
+          onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border2)'"
+          onkeydown="if(event.key==='Enter')adminSendOtp()">
+      </div>
+      <button onclick="adminSendOtp()" id="btn-send-otp"
+        style="width:100%;padding:13px;border-radius:12px;border:none;cursor:pointer;font-size:15px;font-weight:700;background:linear-gradient(135deg,#4f6ef7,#6366f1);color:#fff;font-family:inherit;transition:opacity .15s">
+        Получить код →
+      </button>
+    </div>
+
+    <!-- Step 2: OTP -->
+    <div id="login-step-otp" style="display:none">
+      <div style="font-size:13px;color:var(--muted);text-align:center;margin-bottom:14px">
+        Код отправлен на <b id="otp-email-shown" style="color:var(--text)"></b>
+      </div>
+      <div id="login-otp-wrap" style="display:flex;gap:8px;justify-content:center;margin-bottom:14px">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+      </div>
+      <button onclick="adminVerifyOtp()" id="btn-verify-otp"
+        style="width:100%;padding:13px;border-radius:12px;border:none;cursor:pointer;font-size:15px;font-weight:700;background:linear-gradient(135deg,#4f6ef7,#6366f1);color:#fff;font-family:inherit;margin-bottom:8px">
+        Войти →
+      </button>
+      <div style="text-align:center;font-size:12px;color:var(--muted);margin-top:6px">
+        <button id="btn-resend-otp" onclick="adminResendOtp()" disabled
+          style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">
+          Отправить снова (<span id="resend-timer">60</span>с)
+        </button>
+      </div>
+      <button onclick="document.getElementById('login-step-otp').style.display='none';document.getElementById('login-step-email').style.display='block'"
+        style="width:100%;padding:10px;border-radius:10px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;margin-top:8px">
+        ← Другой email
+      </button>
+    </div>
+  </div>
+</div>
+
+<header class="topbar" id="main-header" style="display:none">
+  <div class="brand-group">
+    <a href="adm-dashboard.html" class="brand"><div class="brand-dot"></div>Posudamart</a>
+    <span class="admin-badge">👑 Админ</span>
+  </div>
+  <nav class="nav">
+    <a href="adm-dashboard.html" class="nav-btn">🏠 Главная</a>
+    <a href="adm-suppliers.html" class="nav-btn active">🏭 Поставщики</a>
+    <a href="adm-categories.html" class="nav-btn">🗂 Категории</a>
+    <a href="adm-products.html" class="nav-btn">📦 Товары</a>
+    <a href="adm-catalog.html" class="nav-btn">🛍 Каталог</a>
+    <a href="adm-orders.html" class="nav-btn">📋 Заказы</a>
+    <a href="adm-history.html" class="nav-btn">📅 История</a>
+    <a href="adm-profile.html" class="nav-btn">👤 Профиль</a>
+  </nav>
+  <div class="topbar-right">
+    <span class="user-name" id="admin-email">—</span>
+    <button class="btn-logout" onclick="adminSignOut()">Выйти</button>
+  </div>
+</header>
+
+<main class="container" id="main-content" style="display:none">
+  <div class="page-head">
+    <h1>Поставщики (<span id="count">0</span>)</h1>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <input id="search" type="text" placeholder="Поиск по названию..." style="width:200px">
+      <select id="filter-status" style="width:160px">
+        <option value="">Все статусы</option>
+        <option value="active">Активные</option>
+        <option value="pending">На проверке</option>
+        <option value="rejected">Отклонённые</option>
+      </select>
+      <button class="btn btn-primary" onclick="openEditSup('')">+ Добавить</button>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="table-wrap">
+      <table style="min-width:700px">
+        <thead><tr><th style="width:50px">Лого</th><th>Название</th><th>Телефон</th><th>WhatsApp</th><th>Статус</th><th>Товаров</th><th>Действия</th></tr></thead>
+        <tbody id="tbody"><tr><td colspan="8" class="empty">Загрузка...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- Supplier Edit Modal -->
+<div class="modal-backdrop" id="sup-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">Редактировать поставщика</div>
+      <button class="modal-close" data-close-sup>✕</button>
+    </div>
+    <input type="hidden" id="sup-id">
+    <div class="form-grid">
+      <div class="field full">
+        <label>Название *</label>
+        <input type="text" id="sup-name" placeholder="ООО Посуда">
+      </div>
+      <div class="field">
+        <label>Телефон</label>
+        <input type="tel" id="sup-phone" placeholder="+7 777 123 4567">
+      </div>
+      <div class="field">
+        <label>WhatsApp</label>
+        <input type="tel" id="sup-whatsapp" placeholder="+7 777 123 4567">
+      </div>
+      <div class="field full">
+        <label>Адрес</label>
+        <input type="text" id="sup-address" placeholder="г. Алматы, ул. ...">
+      </div>
+      <div class="field">
+        <label>Статус</label>
+        <select id="sup-status">
+          <option value="active">Активен</option>
+          <option value="pending">На проверке</option>
+          <option value="rejected">Отклонён</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Логотип</label>
+        <input type="file" id="sup-logo-file" accept="image/*">
+        <img id="sup-logo-preview" style="width:60px;height:60px;object-fit:cover;border-radius:8px;border:1px solid var(--border);margin-top:6px;display:none">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" id="btn-save-sup">💾 Сохранить</button>
+      <button class="btn" data-close-sup>Отмена</button>
+    </div>
+  </div>
+</div>
+
+<script src="../shared/admin.js"></script>
+<script>
+
+let suppliers=[], products=[];
+
+async function onAdminLoggedIn() {
+  const [s,p]=await Promise.all([
+    sb.from('suppliers').select('*').order('name'),
+    sb.from('products').select('id,supplier_id')
+  ]);
+  suppliers=s.data||[]; products=p.data||[]; render();
+  sb.channel('rt-s').on('postgres_changes',{event:'*',schema:'public',table:'suppliers'},async()=>{
+    const{data}=await sb.from('suppliers').select('*').order('name');
+    suppliers=data||[]; render();
+  }).subscribe();
+}
+
+function statusBadgeLocal(st) {
+  if(st==='active') return '<span class="badge badge-active">Активен</span>';
+  if(st==='pending') return '<span class="badge badge-pending">На проверке</span>';
+  return '<span class="badge" style="background:rgba(239,68,68,0.12);color:var(--danger);border:1px solid rgba(239,68,68,0.25)">Отклонён</span>';
+}
+
+function render() {
+  const term=document.getElementById('search').value.toLowerCase();
+  const fSt=document.getElementById('filter-status').value;
+  const filtered=suppliers.filter(s=>(!term||s.name?.toLowerCase().includes(term)||s.phone?.includes(term))&&(!fSt||s.status===fSt));
+  document.getElementById('count').textContent=filtered.length;
+  const tbody=document.getElementById('tbody');
+  if(!filtered.length){tbody.innerHTML='<tr><td colspan="8" class="empty"><div class="empty-icon">🏭</div>Поставщики не найдены</td></tr>';return}
+  tbody.innerHTML=filtered.map(s=>{
+    const cnt=products.filter(p=>p.supplier_id===s.id).length;
+    const logo=s.logo?`<img class="thumb" src="${s.logo}" alt="">`:'<div class="thumb-ph">🏭</div>';
+    return`<tr>
+      <td>${logo}</td>
+      <td><strong>${esc(s.name)}</strong><br><span style="font-size:11px;color:var(--muted)">${esc(s.address||'')}</span>${!s.user_id?'<br><span style="font-size:10px;color:var(--warning);font-weight:600">⚠ Нет аккаунта</span>':''}</td>
+      <td class="mono">${esc(s.phone||'—')}</td>
+      <td class="mono">${esc(s.whatsapp||'—')}</td>
+      <td>${statusBadgeLocal(s.status)}</td>
+      <td style="text-align:center">${cnt}</td>
+      <td><div class="row-actions">
+        <button class="btn btn-sm btn-ghost" onclick="openEditSup('${s.id}')">✏</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteSup('${s.id}')" ${cnt>0?'title="Есть товары"':''}>${cnt>0?'🔒':'✕'}</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Moderate ──
+async function moderate(id, status) {
+  if(!confirm(status==='active'?'Одобрить поставщика?':'Отклонить поставщика?'))return;
+  const{error}=await sb.from('suppliers').update({status}).eq('id',id);
+  if(error)return showToast(error.message,false);
+  showToast(status==='active'?'✓ Одобрен':'✕ Отклонён');
+  const{data}=await sb.from('suppliers').select('*').order('name');
+  suppliers=data||[]; render();
+}
+
+// ── Edit Modal ──
+function openEditSup(id) {
+  const s=suppliers.find(x=>x.id===id)||{};
+  document.getElementById('sup-id').value=s.id||'';
+  document.getElementById('sup-name').value=s.name||'';
+  document.getElementById('sup-phone').value=s.phone||'';
+  document.getElementById('sup-whatsapp').value=s.whatsapp||'';
+  document.getElementById('sup-address').value=s.address||'';
+  document.getElementById('sup-status').value=s.status||'active';
+  document.getElementById('sup-logo-preview').src=s.logo||'';
+  document.getElementById('sup-logo-preview').style.display=s.logo?'block':'none';
+  document.getElementById('sup-modal').classList.add('open');
+}
+
+function closeSup(){document.getElementById('sup-modal').classList.remove('open')}
+
+document.getElementById('sup-logo-file').addEventListener('change',async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const b64=await resizeImage(f,600);
+  document.getElementById('sup-logo-preview').src=b64;
+  document.getElementById('sup-logo-preview').style.display='block';
+});
+
+document.getElementById('btn-save-sup').addEventListener('click',async()=>{
+  const id=document.getElementById('sup-id').value;
+  const name=document.getElementById('sup-name').value.trim();
+  if(!name)return showToast('Введи название',false);
+  const logo=document.getElementById('sup-logo-preview').src;
+  const payload={
+    name,
+    phone:document.getElementById('sup-phone').value.trim(),
+    whatsapp:document.getElementById('sup-whatsapp').value.trim(),
+    address:document.getElementById('sup-address').value.trim(),
+    status:document.getElementById('sup-status').value,
+    logo:logo&&logo!==window.location.href?logo:undefined
+  };
+  Object.keys(payload).forEach(k=>payload[k]===undefined&&delete payload[k]);
+  const{error}=id
+    ?await sb.from('suppliers').update(payload).eq('id',id)
+    :await sb.from('suppliers').insert({...payload,id:crypto.randomUUID()});
+  if(error)return showToast(error.message,false);
+  closeSup();
+  const{data}=await sb.from('suppliers').select('*').order('name');
+  suppliers=data||[]; render();
+  showToast(id?'✓ Сохранено':'✓ Добавлен поставщик');
+});
+
+async function deleteSup(id) {
+  const s=suppliers.find(x=>x.id===id);
+  const cnt=products.filter(p=>p.supplier_id===id).length;
+  if(cnt>0)return showToast(`Нельзя удалить: ${cnt} товаров привязано`,false);
+  if(!confirm(`Удалить "${s?.name}"? Это действие необратимо.`))return;
+  const{error}=await sb.from('suppliers').delete().eq('id',id);
+  if(error)return showToast(error.message,false);
+  suppliers=suppliers.filter(x=>x.id!==id); render();
+  showToast('✓ Удалён');
+}
+
+document.getElementById('search').addEventListener('input',render);
+document.getElementById('filter-status').addEventListener('change',render);
+document.querySelector('[data-close-sup]').addEventListener('click',closeSup);
+document.getElementById('sup-modal').addEventListener('click',e=>{if(e.target===document.getElementById('sup-modal'))closeSup()});
+
+// Auto-run auth check
+(async () => {
+  const user = await adminAuthGuard();
+  if (user) {
+    document.getElementById('main-header').style.display = '';
+    document.getElementById('main-content').style.display = '';
+    if (typeof onAdminLoggedIn === 'function') await onAdminLoggedIn();
+  }
+})();
+// OTP keyboard wiring
+(function() {
+  const boxes = document.querySelectorAll('#login-otp-wrap .otp-box');
+  boxes.forEach((box, i) => {
+    box.addEventListener('input', e => {
+      const v = e.target.value.replace(/\D/g,''); e.target.value = v;
+      if (v) { e.target.style.borderColor='var(--accent)'; e.target.style.background='rgba(79,110,247,0.08)'; if (i < 5) boxes[i+1].focus(); }
+      else { e.target.style.borderColor='var(--border2)'; e.target.style.background='var(--bg)'; }
+      if ([...boxes].every(b => b.value)) adminVerifyOtp();
+    });
+    box.addEventListener('keydown', e => {
+      if (e.key === 'Backspace' && !box.value && i > 0) { boxes[i-1].focus(); boxes[i-1].value = ''; boxes[i-1].style.borderColor='var(--border2)'; }
+    });
+    box.addEventListener('paste', e => {
+      e.preventDefault();
+      const paste = e.clipboardData.getData('text').replace(/\D/g,'').slice(0,6);
+      [...paste].forEach((ch,j) => { if(boxes[i+j]) { boxes[i+j].value=ch; boxes[i+j].style.borderColor='var(--accent)'; boxes[i+j].style.background='rgba(79,110,247,0.08)'; } });
+      if([...boxes].every(b=>b.value)) adminVerifyOtp();
+    });
+  });
+})();
+</script>
+</script>
+</body>
+</html>

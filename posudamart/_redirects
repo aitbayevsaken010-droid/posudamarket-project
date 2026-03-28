@@ -1,0 +1,10 @@
+# Cloudflare Pages redirects
+# Short clean URLs → actual HTML files
+
+/admin               /admin/adm-dashboard.html  302
+/admin/              /admin/adm-dashboard.html  302
+/supplier            /supplier/sup-dashboard.html  302
+/supplier/           /supplier/sup-dashboard.html  302
+/login               /index.html  302
+/client               /client/clt-dashboard.html  302
+/client/              /client/clt-dashboard.html  302

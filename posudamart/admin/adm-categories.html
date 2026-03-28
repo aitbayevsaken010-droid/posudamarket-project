@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin — Категории</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <link rel="stylesheet" href="../shared/admin.css">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+// Ultra-fast pre-check: hide spinner immediately if we have cached session
+(function(){
+  const role = localStorage.getItem('adm_role');
+  const id = localStorage.getItem('adm_id');
+  if (role === 'admin' && id) {
+    // Will be verified properly by adminAuthGuard, but hide spinner now
+    const style = document.createElement('style');
+    style.textContent = '#auth-loading{display:none!important}#main-header,#main-content{display:block!important}';
+    document.head.appendChild(style);
+  }
+})();
+</script>
+
+</head>
+<body>
+
+<div id="auth-loading" style="position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9998">
+  <div style="width:32px;height:32px;border:3px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite"></div>
+</div>
+<div id="toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:10px 22px;border-radius:30px;font-size:13px;font-weight:600;z-index:9999;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap"></div>
+
+<div id="login-overlay" style="position:fixed;inset:0;background:var(--bg);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--surface);border:1px solid var(--border2);border-radius:20px;padding:36px 32px;width:100%;max-width:400px;box-shadow:0 32px 80px rgba(0,0,0,.5)">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:36px;margin-bottom:10px">🏺</div>
+      <div style="font-size:20px;font-weight:800">Posudamart Admin</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">Панель администратора</div>
+    </div>
+    <div id="login-error" style="display:none;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:600;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;margin-bottom:14px"></div>
+
+    <!-- Step 1: Email -->
+    <div id="login-step-email">
+      <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:14px">
+        <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Email администратора</label>
+        <input type="email" id="login-email" placeholder="admin@example.com"
+          style="background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);padding:11px 14px;font-size:15px;outline:none;width:100%;font-family:inherit;transition:border-color .15s"
+          onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border2)'"
+          onkeydown="if(event.key==='Enter')adminSendOtp()">
+      </div>
+      <button onclick="adminSendOtp()" id="btn-send-otp"
+        style="width:100%;padding:13px;border-radius:12px;border:none;cursor:pointer;font-size:15px;font-weight:700;background:linear-gradient(135deg,#4f6ef7,#6366f1);color:#fff;font-family:inherit;transition:opacity .15s">
+        Получить код →
+      </button>
+    </div>
+
+    <!-- Step 2: OTP -->
+    <div id="login-step-otp" style="display:none">
+      <div style="font-size:13px;color:var(--muted);text-align:center;margin-bottom:14px">
+        Код отправлен на <b id="otp-email-shown" style="color:var(--text)"></b>
+      </div>
+      <div id="login-otp-wrap" style="display:flex;gap:8px;justify-content:center;margin-bottom:14px">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+      </div>
+      <button onclick="adminVerifyOtp()" id="btn-verify-otp"
+        style="width:100%;padding:13px;border-radius:12px;border:none;cursor:pointer;font-size:15px;font-weight:700;background:linear-gradient(135deg,#4f6ef7,#6366f1);color:#fff;font-family:inherit;margin-bottom:8px">
+        Войти →
+      </button>
+      <div style="text-align:center;font-size:12px;color:var(--muted);margin-top:6px">
+        <button id="btn-resend-otp" onclick="adminResendOtp()" disabled
+          style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">
+          Отправить снова (<span id="resend-timer">60</span>с)
+        </button>
+      </div>
+      <button onclick="document.getElementById('login-step-otp').style.display='none';document.getElementById('login-step-email').style.display='block'"
+        style="width:100%;padding:10px;border-radius:10px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;margin-top:8px">
+        ← Другой email
+      </button>
+    </div>
+  </div>
+</div>
+
+<header class="topbar" id="main-header" style="display:none">
+  <div class="brand-group">
+    <a href="adm-dashboard.html" class="brand"><div class="brand-dot"></div>Posudamart</a>
+    <span class="admin-badge">👑 Админ</span>
+  </div>
+  <nav class="nav">
+    <a href="adm-dashboard.html" class="nav-btn">🏠 Главная</a>
+    <a href="adm-suppliers.html" class="nav-btn">🏭 Поставщики</a>
+    <a href="adm-categories.html" class="nav-btn active">🗂 Категории</a>
+    <a href="adm-products.html" class="nav-btn">📦 Товары</a>
+    <a href="adm-catalog.html" class="nav-btn">🛍 Каталог</a>
+    <a href="adm-orders.html" class="nav-btn">📋 Заказы</a>
+    <a href="adm-history.html" class="nav-btn">📅 История</a>
+    <a href="adm-profile.html" class="nav-btn">👤 Профиль</a>
+  </nav>
+  <div class="topbar-right">
+    <span class="user-name" id="admin-email">—</span>
+    <button class="btn-logout" onclick="adminSignOut()">Выйти</button>
+  </div>
+</header>
+
+<main class="container" id="main-content" style="display:none">
+
+  <div class="page-head"><h1>Категории</h1></div>
+  <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start">
+    <div class="panel">
+      <div class="panel-title">Добавить / Редактировать</div>
+      <input type="hidden" id="cat-id">
+      <div class="field"><label>Название *</label><input type="text" id="cat-name" placeholder="Например: Кастрюли"></div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="btn-save-cat">Сохранить</button>
+        <button class="btn btn-ghost" onclick="resetCatForm()">Очистить</button>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Список (<span id="count">0</span>)</div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Название</th><th>Товаров</th><th style="width:80px">Действия</th></tr></thead>
+        <tbody id="tbody"><tr><td colspan="3" class="empty">Загрузка...</td></tr></tbody></table>
+      </div>
+    </div>
+  </div>
+  <style>@media(max-width:800px){#main-content>div:last-child{grid-template-columns:1fr!important}}</style>
+</main>
+
+<script src="../shared/admin.js"></script>
+<script>
+let categories=[], products=[];
+
+async function onAdminLoggedIn() {
+  await load();
+}
+
+async function load() {
+  const [c,p]=await Promise.all([
+    sb.from('categories').select('*').order('name'),
+    sb.from('products').select('id,category_id')
+  ]);
+  categories=c.data||[]; products=p.data||[]; render();
+}
+
+function render() {
+  document.getElementById('count').textContent=categories.length;
+  const tbody=document.getElementById('tbody');
+  if(!categories.length){tbody.innerHTML='<tr><td colspan="3" class="empty"><div class="empty-icon">🗂</div>Нет категорий</td></tr>';return}
+  tbody.innerHTML=categories.map(c=>{
+    const cnt=products.filter(p=>p.category_id===c.id).length;
+    return`<tr>
+      <td><strong>${esc(c.name)}</strong></td>
+      <td style="text-align:center">${cnt}</td>
+      <td><div class="row-actions">
+        <button class="btn btn-sm btn-ghost" onclick="editCat('${c.id}')">✏</button>
+        <button class="btn btn-sm btn-danger" onclick="delCat('${c.id}')" ${cnt>0?'disabled title="Используется в товарах"':''}>✕</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+function resetCatForm(){document.getElementById('cat-id').value='';document.getElementById('cat-name').value='';document.getElementById('btn-save-cat').textContent='Сохранить';}
+function editCat(id){const c=categories.find(x=>x.id===id);if(!c)return;document.getElementById('cat-id').value=c.id;document.getElementById('cat-name').value=c.name;document.getElementById('btn-save-cat').textContent='Обновить';document.getElementById('cat-name').focus();}
+
+async function delCat(id){
+  const c=categories.find(x=>x.id===id);if(!c)return;
+  // Проверяем есть ли товары в этой категории
+  const{data:prods}=await sb.from('products').select('id').eq('category_id',id).limit(1);
+  if(prods&&prods.length>0)return showToast('Нельзя удалить: есть товары в этой категории',false);
+  if(!confirm(`Удалить "${c.name}"?`))return;
+  const{error}=await sb.from('categories').delete().eq('id',id);
+  if(error)return showToast(error.message,false);
+  await load(); showToast('✓ Удалено');
+}
+
+document.getElementById('btn-save-cat').addEventListener('click',async()=>{
+  const name=document.getElementById('cat-name').value.trim();
+  if(!name)return showToast('Введи название',false);
+  const editId=document.getElementById('cat-id').value;
+  if(categories.find(c=>c.name.toLowerCase()===name.toLowerCase()&&c.id!==editId))
+    return showToast('Такая категория уже есть',false);
+  const{error}=editId
+    ?await sb.from('categories').update({name}).eq('id',editId)
+    :await sb.from('categories').insert({id:crypto.randomUUID(),name});
+  if(error)return showToast(error.message,false);
+  await load(); resetCatForm();
+  showToast(editId?'✓ Обновлено':'✓ Добавлено');
+});
+
+document.getElementById('cat-name').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('btn-save-cat').click()});
+
+(async () => {
+  const user = await adminAuthGuard();
+  if (user) {
+    document.getElementById('main-header').style.display = '';
+    document.getElementById('main-content').style.display = '';
+    if (typeof onAdminLoggedIn === 'function') await onAdminLoggedIn();
+  }
+})();
+// OTP keyboard wiring
+(function() {
+  const boxes = document.querySelectorAll('#login-otp-wrap .otp-box');
+  boxes.forEach((box, i) => {
+    box.addEventListener('input', e => {
+      const v = e.target.value.replace(/\D/g,''); e.target.value = v;
+      if (v) { e.target.style.borderColor='var(--accent)'; e.target.style.background='rgba(79,110,247,0.08)'; if (i < 5) boxes[i+1].focus(); }
+      else { e.target.style.borderColor='var(--border2)'; e.target.style.background='var(--bg)'; }
+      if ([...boxes].every(b => b.value)) adminVerifyOtp();
+    });
+    box.addEventListener('keydown', e => {
+      if (e.key === 'Backspace' && !box.value && i > 0) { boxes[i-1].focus(); boxes[i-1].value = ''; boxes[i-1].style.borderColor='var(--border2)'; }
+    });
+    box.addEventListener('paste', e => {
+      e.preventDefault();
+      const paste = e.clipboardData.getData('text').replace(/\D/g,'').slice(0,6);
+      [...paste].forEach((ch,j) => { if(boxes[i+j]) { boxes[i+j].value=ch; boxes[i+j].style.borderColor='var(--accent)'; boxes[i+j].style.background='rgba(79,110,247,0.08)'; } });
+      if([...boxes].every(b=>b.value)) adminVerifyOtp();
+    });
+  });
+})();
+</script>
+</script>
+</body>
+</html>

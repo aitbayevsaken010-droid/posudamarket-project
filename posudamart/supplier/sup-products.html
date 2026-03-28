@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Posudamart — Мои товары</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../shared/supplier.css">
+</head>
+<body>
+<div id="auth-loading"><div class="spinner"></div></div>
+<div id="toast"></div>
+
+<header class="topbar">
+  <div class="brand-group">
+    <a href="sup-dashboard.html" class="brand"><div class="brand-dot"></div>Posudamart</a>
+    <span class="supplier-badge">Поставщик</span>
+  </div>
+  <nav class="nav">
+    <a href="sup-dashboard.html" class="nav-btn">🏠 Главная</a>
+    <a href="sup-products.html" class="nav-btn active">📦 Товары</a>
+    <a href="sup-orders.html" class="nav-btn">📋 Заказы</a>
+    <a href="sup-profile.html" class="nav-btn">👤 Профиль</a>
+  </nav>
+  <div class="topbar-right">
+    <span class="user-name" id="user-name">—</span>
+    <button class="btn-logout" onclick="signOut()">Выйти</button>
+  </div>
+</header>
+
+<main class="container">
+  <div class="page-head">
+    <h1>Мои товары</h1>
+    <span style="color:var(--muted);font-size:13px" id="products-count">0 товаров</span>
+  </div>
+
+  <div class="split">
+    <!-- Форма -->
+    <div class="panel" id="form-panel">
+      <div class="panel-title">Карточка товара</div>
+      <input type="hidden" id="pf-id">
+      <div class="form-grid cols1">
+        <div class="field">
+          <label>Наименование *</label>
+          <input type="text" id="pf-name" maxlength="200" placeholder="Название товара">
+        </div>
+        <div class="field">
+          <label>Категория *</label>
+          <select id="pf-category">
+            <option value="">— выбери категорию —</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Артикул</label>
+          <input type="text" id="pf-sku" maxlength="60" placeholder="SKU-001">
+        </div>
+        <div class="field">
+          <label>Штук в коробке *</label>
+          <input type="number" id="pf-units" min="1" step="1" value="1">
+        </div>
+        <div class="field">
+          <label>Цена за штуку (₸) *</label>
+          <input type="number" id="pf-unit-price" min="0" step="0.01" placeholder="0.00">
+        </div>
+        <div class="field">
+          <label>Цена за коробку (₸)</label>
+          <input type="number" id="pf-box-price" readonly style="color:var(--muted)">
+        </div>
+        <div class="field full">
+          <label>Примечание</label>
+          <textarea id="pf-note" maxlength="500" placeholder="Дополнительная информация..."></textarea>
+        </div>
+        <div class="field full">
+          <label>Фото товара</label>
+          <div class="photo-wrap">
+            <div class="photo-ph" id="pf-ph" onclick="document.getElementById('pf-photo').click()">+</div>
+            <img class="photo-preview-img" id="pf-preview" alt="">
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <button class="btn btn-sm" onclick="document.getElementById('pf-photo').click()">📷 Фото</button>
+              <button class="btn btn-sm btn-danger" id="pf-remove">✕ Убрать</button>
+            </div>
+          </div>
+          <input type="file" id="pf-photo" accept="image/*" style="display:none">
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Макс. 900×900px, JPEG</div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="pf-submit">Сохранить</button>
+        <button class="btn btn-ghost" id="pf-cancel">Очистить</button>
+      </div>
+    </div>
+
+    <!-- Список -->
+    <div class="panel">
+      <div class="panel-title">Список товаров (<span id="count">0</span>)</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:50px">Фото</th>
+              <th>Наименование</th>
+              <th>Артикул</th>
+              <th>Цена/кор.</th>
+              <th>Шт/кор.</th>
+              <th style="width:80px">Действия</th>
+            </tr>
+          </thead>
+          <tbody id="products-tbody">
+            <tr><td colspan="6" class="empty"><div class="empty-icon">📦</div>Загрузка...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<nav class="mob-nav">
+  <div class="mob-nav-inner">
+    <a href="sup-dashboard.html" class="mob-btn"><span class="ico">🏠</span>Главная</a>
+    <a href="sup-products.html" class="mob-btn active"><span class="ico">📦</span>Товары</a>
+    <a href="sup-orders.html" class="mob-btn"><span class="ico">📋</span>Заказы</a>
+    <a href="sup-profile.html" class="mob-btn"><span class="ico">👤</span>Профиль</a>
+  </div>
+</nav>
+
+<style>
+  .split{display:grid;grid-template-columns:360px 1fr;gap:16px;align-items:start}
+  @media(max-width:900px){.split{grid-template-columns:1fr}}
+</style>
+
+<script src="../shared/supplier.js"></script>
+<script>
+let products = [], categories = [], pfPhotoData = '';
+
+(async () => {
+  const supplier = await authGuard();
+  if (!supplier) return;
+  await Promise.all([loadCategories(), loadProducts()]);
+})();
+
+async function loadCategories() {
+  const { data } = await sb.from('categories').select('*').order('name');
+  categories = data || [];
+  const sel = document.getElementById('pf-category');
+  sel.innerHTML = '<option value="">— выбери категорию —</option>';
+  categories.forEach(c => sel.innerHTML += `<option value="${c.id}">${esc(c.name)}</option>`);
+}
+
+async function loadProducts() {
+  const { data } = await sb.from('products').select('*').eq('supplier_id', currentSupplier.id).order('name');
+  products = data || [];
+  render();
+}
+
+function render() {
+  const tbody = document.getElementById('products-tbody');
+  document.getElementById('count').textContent = products.length;
+  document.getElementById('products-count').textContent = products.length + ' товаров';
+  if (!products.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty"><div class="empty-icon">📦</div>Товаров пока нет — добавь первый!</td></tr>';
+    return;
+  }
+  tbody.innerHTML = products.map(p => {
+    const cat = categories.find(c => c.id === p.category_id)?.name || '—';
+    const photo = p.photo
+      ? `<img class="thumb" src="${p.photo}" alt="">`
+      : `<div class="thumb-ph">📦</div>`;
+    return `<tr>
+      <td>${photo}</td>
+      <td><strong>${esc(p.name)}</strong><br><span style="font-size:11px;color:var(--muted)">${esc(cat)}</span></td>
+      <td class="mono">${esc(p.sku||'—')}</td>
+      <td class="mono">${fmtMoney(p.box_price)}</td>
+      <td>${fmtNum(p.units_per_box)}</td>
+      <td><div class="row-actions">
+        <button class="btn btn-sm btn-ghost" onclick="editProduct('${p.id}')">✏</button>
+        <button class="btn btn-sm btn-danger" onclick="delProduct('${p.id}')">✕</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+// Photo
+document.getElementById('pf-photo').addEventListener('change', async e => {
+  const file = e.target.files?.[0]; if (!file) return;
+  try { pfPhotoData = await resizeImage(file); setPhotoPreview(pfPhotoData); }
+  catch { showToast('Не удалось загрузить фото', false); }
+});
+document.getElementById('pf-remove').addEventListener('click', () => {
+  pfPhotoData = ''; document.getElementById('pf-photo').value = ''; setPhotoPreview('');
+});
+function setPhotoPreview(url) {
+  const prev = document.getElementById('pf-preview'), ph = document.getElementById('pf-ph');
+  if (url) { prev.src = url; prev.style.display = 'block'; ph.style.display = 'none'; }
+  else { prev.removeAttribute('src'); prev.style.display = 'none'; ph.style.display = 'flex'; }
+}
+
+// Box price calc
+['pf-unit-price','pf-units'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    const u = parseFloat(document.getElementById('pf-unit-price').value)||0;
+    const n = parseInt(document.getElementById('pf-units').value)||0;
+    document.getElementById('pf-box-price').value = n > 0 ? (u*n).toFixed(2) : '';
+  });
+});
+
+function resetForm() {
+  document.getElementById('pf-id').value = '';
+  ['pf-name','pf-sku','pf-unit-price','pf-box-price','pf-note'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('pf-units').value = 1;
+  document.getElementById('pf-category').value = '';
+  pfPhotoData = ''; document.getElementById('pf-photo').value = ''; setPhotoPreview('');
+  document.getElementById('pf-submit').textContent = 'Сохранить';
+}
+document.getElementById('pf-cancel').addEventListener('click', resetForm);
+
+function editProduct(id) {
+  const p = products.find(x => x.id === id); if (!p) return;
+  document.getElementById('pf-id').value = p.id;
+  document.getElementById('pf-name').value = p.name || '';
+  document.getElementById('pf-category').value = p.category_id || '';
+  document.getElementById('pf-sku').value = p.sku || '';
+  document.getElementById('pf-units').value = p.units_per_box || 1;
+  const up = p.units_per_box > 0 ? p.box_price / p.units_per_box : p.box_price;
+  document.getElementById('pf-unit-price').value = up || '';
+  document.getElementById('pf-box-price').value = p.box_price || '';
+  document.getElementById('pf-note').value = p.note || '';
+  pfPhotoData = p.photo || ''; setPhotoPreview(pfPhotoData);
+  document.getElementById('pf-submit').textContent = 'Обновить';
+  document.getElementById('form-panel').scrollIntoView({ behavior: 'smooth' });
+}
+
+async function delProduct(id) {
+  const p = products.find(x => x.id === id); if (!p) return;
+  if (!confirm(`Удалить "${p.name}"?`)) return;
+  const { error } = await sb.from('products').delete().eq('id', id);
+  if (error) return showToast(error.message, false);
+  products = products.filter(x => x.id !== id);
+  render(); showToast('✓ Товар удалён');
+}
+
+document.getElementById('pf-submit').addEventListener('click', async () => {
+  const name = document.getElementById('pf-name').value.trim();
+  const catId = document.getElementById('pf-category').value;
+  const unitPrice = parseFloat(document.getElementById('pf-unit-price').value);
+  const units = parseInt(document.getElementById('pf-units').value);
+  if (!name) return showToast('Введи наименование', false);
+  if (!catId) return showToast('Выбери категорию', false);
+  if (!(unitPrice > 0)) return showToast('Введи цену за штуку', false);
+  if (!Number.isInteger(units) || units <= 0) return showToast('Штук в коробке — целое число > 0', false);
+
+  const btn = document.getElementById('pf-submit');
+  btn.disabled = true; btn.textContent = 'Сохраняем...';
+
+  const payload = {
+    supplier_id: currentSupplier.id, name,
+    category_id: catId, sku: document.getElementById('pf-sku').value.trim(),
+    box_price: unitPrice * units, units_per_box: units,
+    note: document.getElementById('pf-note').value.trim(),
+    photo: pfPhotoData || '', updated_at: new Date().toISOString()
+  };
+
+  const editId = document.getElementById('pf-id').value;
+  let error;
+  if (editId) {
+    ({ error } = await sb.from('products').update(payload).eq('id', editId));
+    if (!error) { const i = products.findIndex(x => x.id === editId); if (i >= 0) products[i] = { ...products[i], ...payload, id: editId }; }
+  } else {
+    const { data, error: err } = await sb.from('products').insert({ id: uid(), ...payload }).select().single();
+    error = err; if (!error && data) products.push(data);
+  }
+
+  btn.disabled = false;
+  if (error) { btn.textContent = editId?'Обновить':'Сохранить'; return showToast(error.message, false); }
+  resetForm(); render(); showToast(editId ? '✓ Товар обновлён' : '✓ Товар добавлен');
+});
+</script>
+</body>
+</html>

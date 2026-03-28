@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin — Заказы</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <link rel="stylesheet" href="../shared/admin.css">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+// Ultra-fast pre-check: hide spinner immediately if we have cached session
+(function(){
+  const role = localStorage.getItem('adm_role');
+  const id = localStorage.getItem('adm_id');
+  if (role === 'admin' && id) {
+    // Will be verified properly by adminAuthGuard, but hide spinner now
+    const style = document.createElement('style');
+    style.textContent = '#auth-loading{display:none!important}#main-header,#main-content{display:block!important}';
+    document.head.appendChild(style);
+  }
+})();
+</script>
+
+</head>
+<body>
+
+<div id="auth-loading" style="position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9998">
+  <div style="width:32px;height:32px;border:3px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite"></div>
+</div>
+<div id="toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:10px 22px;border-radius:30px;font-size:13px;font-weight:600;z-index:9999;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap"></div>
+
+<div id="login-overlay" style="position:fixed;inset:0;background:var(--bg);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--surface);border:1px solid var(--border2);border-radius:20px;padding:36px 32px;width:100%;max-width:400px;box-shadow:0 32px 80px rgba(0,0,0,.5)">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:36px;margin-bottom:10px">🏺</div>
+      <div style="font-size:20px;font-weight:800">Posudamart Admin</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">Панель администратора</div>
+    </div>
+    <div id="login-error" style="display:none;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:600;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;margin-bottom:14px"></div>
+
+    <!-- Step 1: Email -->
+    <div id="login-step-email">
+      <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:14px">
+        <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Email администратора</label>
+        <input type="email" id="login-email" placeholder="admin@example.com"
+          style="background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);padding:11px 14px;font-size:15px;outline:none;width:100%;font-family:inherit;transition:border-color .15s"
+          onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border2)'"
+          onkeydown="if(event.key==='Enter')adminSendOtp()">
+      </div>
+      <button onclick="adminSendOtp()" id="btn-send-otp"
+        style="width:100%;padding:13px;border-radius:12px;border:none;cursor:pointer;font-size:15px;font-weight:700;background:linear-gradient(135deg,#4f6ef7,#6366f1);color:#fff;font-family:inherit;transition:opacity .15s">
+        Получить код →
+      </button>
+    </div>
+
+    <!-- Step 2: OTP -->
+    <div id="login-step-otp" style="display:none">
+      <div style="font-size:13px;color:var(--muted);text-align:center;margin-bottom:14px">
+        Код отправлен на <b id="otp-email-shown" style="color:var(--text)"></b>
+      </div>
+      <div id="login-otp-wrap" style="display:flex;gap:8px;justify-content:center;margin-bottom:14px">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" style="width:46px;height:54px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:20px;font-weight:700;text-align:center;outline:none;font-family:var(--mono);transition:all .15s">
+      </div>
+      <button onclick="adminVerifyOtp()" id="btn-verify-otp"
+        style="width:100%;padding:13px;border-radius:12px;border:none;cursor:pointer;font-size:15px;font-weight:700;background:linear-gradient(135deg,#4f6ef7,#6366f1);color:#fff;font-family:inherit;margin-bottom:8px">
+        Войти →
+      </button>
+      <div style="text-align:center;font-size:12px;color:var(--muted);margin-top:6px">
+        <button id="btn-resend-otp" onclick="adminResendOtp()" disabled
+          style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">
+          Отправить снова (<span id="resend-timer">60</span>с)
+        </button>
+      </div>
+      <button onclick="document.getElementById('login-step-otp').style.display='none';document.getElementById('login-step-email').style.display='block'"
+        style="width:100%;padding:10px;border-radius:10px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;margin-top:8px">
+        ← Другой email
+      </button>
+    </div>
+  </div>
+</div>
+
+<header class="topbar" id="main-header" style="display:none">
+  <div class="brand-group">
+    <a href="adm-dashboard.html" class="brand"><div class="brand-dot"></div>Posudamart</a>
+    <span class="admin-badge">👑 Админ</span>
+  </div>
+  <nav class="nav">
+    <a href="adm-dashboard.html" class="nav-btn">🏠 Главная</a>
+    <a href="adm-suppliers.html" class="nav-btn">🏭 Поставщики</a>
+    <a href="adm-categories.html" class="nav-btn">🗂 Категории</a>
+    <a href="adm-products.html" class="nav-btn">📦 Товары</a>
+    <a href="adm-catalog.html" class="nav-btn">🛍 Каталог</a>
+    <a href="adm-orders.html" class="nav-btn active">📋 Заказы</a>
+    <a href="adm-history.html" class="nav-btn">📅 История</a>
+    <a href="adm-profile.html" class="nav-btn">👤 Профиль</a>
+  </nav>
+  <div class="topbar-right">
+    <span class="user-name" id="admin-email">—</span>
+    <button class="btn-logout" onclick="adminSignOut()">Выйти</button>
+  </div>
+</header>
+
+<main class="container" id="main-content" style="display:none">
+  <div class="page-head">
+    <h1>Активные заказы</h1>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <input id="search" type="text" placeholder="Поиск по номеру..." style="width:180px">
+      <select id="filter-sup" style="width:170px"><option value="">Все поставщики</option></select>
+      <select id="filter-status" style="width:150px">
+        <option value="">Все статусы</option>
+        <option value="Черновик">Черновик</option>
+        <option value="Оформлен">Оформлен</option>
+      </select>
+    </div>
+  </div>
+  <div id="orders-container"></div>
+</main>
+
+<!-- Модальное окно заказа -->
+<div class="modal-backdrop" id="order-modal">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-head">
+      <div class="modal-title" id="modal-title">Заказ</div>
+      <button class="modal-close" onclick="closeOrderModal()">✕</button>
+    </div>
+    <div id="modal-supplier-info" style="background:var(--surface2);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;display:flex;gap:24px;flex-wrap:wrap"></div>
+    <div id="modal-items-wrap"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+      <div style="font-size:15px;font-weight:800" id="modal-total"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap" id="modal-actions"></div>
+    </div>
+  </div>
+</div>
+
+<script src="../shared/admin.js"></script>
+<script>
+
+let orders=[], suppliers=[], products=[];
+
+async function onAdminLoggedIn() {
+  const [o,s,p]=await Promise.all([
+    sb.from('orders').select('*').eq('archived',false).order('date',{ascending:false}),
+    sb.from('suppliers').select('id,name,phone,whatsapp,address').order('name'),
+    sb.from('products').select('id,name,sku,photo').order('name')
+  ]);
+  orders=o.data||[]; suppliers=s.data||[]; products=p.data||[];
+  suppliers.forEach(s=>document.getElementById('filter-sup').innerHTML+=`<option value="${s.id}">${esc(s.name)}</option>`);
+  render();
+  sb.channel('rt-o').on('postgres_changes',{event:'*',schema:'public',table:'orders'},async()=>{
+    const{data}=await sb.from('orders').select('*').eq('archived',false).order('date',{ascending:false});
+    orders=data||[]; render();
+  }).subscribe();
+}
+
+function getSup(id){return suppliers.find(x=>x.id===id)||{name:'—'}}
+function getProd(id){return products.find(x=>x.id===id)||{}}
+
+// Track which supplier groups are expanded
+const expandedSups = new Set();
+
+function render() {
+  const term = document.getElementById('search').value.toLowerCase();
+  const fSup = document.getElementById('filter-sup').value;
+  const fSt  = document.getElementById('filter-status').value;
+
+  const filtered = orders.filter(o => {
+    const ok = !term || (o.number||'').toLowerCase().includes(term) || getSup(o.supplier_id).name.toLowerCase().includes(term);
+    return ok && (!fSup || o.supplier_id === fSup) && (!fSt || o.status === fSt);
+  });
+
+  const container = document.getElementById('orders-container');
+
+  if (!filtered.length) {
+    container.innerHTML = '<div class="panel"><div class="empty"><div class="empty-icon">📋</div>Заказов нет</div></div>';
+    return;
+  }
+
+  // Group by supplier
+  const grouped = {};
+  filtered.forEach(o => {
+    const key = o.supplier_id || '__none__';
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(o);
+  });
+
+  let html = '';
+  for (const [supId, grpOrders] of Object.entries(grouped)) {
+    const sup = getSup(supId);
+    const grpTotal = grpOrders.reduce((s,o) => s + (o.items||[]).reduce((ss,i) => ss+Number(i.totalPrice||0), 0), 0);
+    const isOpen = expandedSups.has(supId);
+    const logo = sup.logo
+      ? `<img src="${sup.logo}" style="width:36px;height:36px;border-radius:8px;object-fit:cover;border:1px solid var(--border);flex-shrink:0">`
+      : `<div style="width:36px;height:36px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">🏭</div>`;
+
+    html += `
+    <div class="panel" style="margin-bottom:12px;padding:0;overflow:hidden">
+      <!-- Supplier header row - clickable to expand -->
+      <div onclick="toggleSup('${supId}')" style="display:flex;align-items:center;gap:14px;padding:14px 18px;cursor:pointer;transition:background .15s;user-select:none" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+        ${logo}
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:15px">${esc(sup.name)}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">${grpOrders.length} заказ(ов) · ${fmtMoney(grpTotal)}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px">
+          ${grpOrders.map(o => statusBadge(o.status)).filter((v,i,a)=>a.indexOf(v)===i).join(' ')}
+          <span style="color:var(--muted);font-size:18px;transition:transform .2s;${isOpen?'transform:rotate(180deg)':''}">▾</span>
+        </div>
+      </div>
+
+      <!-- Orders list - collapsible -->
+      <div id="sup-group-${supId}" style="display:${isOpen?'block':'none'};border-top:1px solid var(--border)">
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="background:var(--surface2)">
+              <th style="padding:8px 18px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:left">Номер</th>
+              <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:left">Дата</th>
+              <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:left">Статус</th>
+              <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:center">Позиций</th>
+              <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:right">Сумма</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${grpOrders.map(o => {
+              const total = (o.items||[]).reduce((s,i)=>s+Number(i.totalPrice||0),0);
+              return `<tr onclick="openOrderModal('${o.id}')" style="cursor:pointer;border-top:1px solid var(--border);transition:background .12s" onmouseover="this.style.background='rgba(79,110,247,0.06)'" onmouseout="this.style.background=''">
+                <td style="padding:12px 18px;font-family:var(--mono);font-size:13px"><strong>#${esc(o.number)}</strong></td>
+                <td style="padding:12px 12px;font-size:13px;color:var(--muted)">${esc(o.date)}</td>
+                <td style="padding:12px 12px">${statusBadge(o.status)}</td>
+                <td style="padding:12px 12px;text-align:center;color:var(--muted);font-size:13px">${(o.items||[]).length}</td>
+                <td style="padding:12px 18px;text-align:right;font-family:var(--mono);font-size:13px;font-weight:700">${fmtMoney(total)}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+  }
+  container.innerHTML = html;
+}
+
+function toggleSup(supId) {
+  if (expandedSups.has(supId)) {
+    expandedSups.delete(supId);
+  } else {
+    expandedSups.add(supId);
+  }
+  render();
+}
+
+// ── ORDER MODAL ──
+function openOrderModal(id) {
+  const o = orders.find(x => x.id === id);
+  if (!o) return;
+  const sup = getSup(o.supplier_id);
+  const total = (o.items||[]).reduce((s,i)=>s+Number(i.totalPrice||0),0);
+
+  document.getElementById('modal-title').textContent = `Заказ #${o.number}`;
+
+  // Supplier info strip
+  document.getElementById('modal-supplier-info').innerHTML = `
+    <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Поставщик</span><div style="font-weight:700;margin-top:3px">${esc(sup.name)}</div></div>
+    ${sup.phone?`<div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Телефон</span><div style="font-weight:600;margin-top:3px">${esc(sup.phone)}</div></div>`:''}
+    ${sup.whatsapp?`<div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">WhatsApp</span><div style="font-weight:600;margin-top:3px">${esc(sup.whatsapp)}</div></div>`:''}
+    <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Дата</span><div style="font-weight:600;margin-top:3px">${esc(o.date)}</div></div>
+    <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Статус</span><div style="margin-top:3px">${statusBadge(o.status)}</div></div>
+  `;
+
+  // Items table — редактируемые коробки
+  const items = o.items || [];
+  document.getElementById('modal-items-wrap').innerHTML = items.length ? `
+    <div style="overflow-x:auto;border-radius:10px;border:1px solid var(--border)">
+      <table style="width:100%;border-collapse:collapse;min-width:440px">
+        <thead>
+          <tr style="background:var(--surface2)">
+            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:left">Товар</th>
+            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:center">Кор.</th>
+            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:center">Шт/кор</th>
+            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:center">Всего шт</th>
+            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:right">Сумма</th>
+          </tr>
+        </thead>
+        <tbody id="modal-tbody">
+          ${items.map((item, idx) => {
+            const prod = getProd(item.productId||'');
+            const photo = (prod.photo || item._photo)
+              ? `<img src="${prod.photo||item._photo}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;border:1px solid var(--border);flex-shrink:0">`
+              : `<div style="width:36px;height:36px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">📦</div>`;
+            return `<tr data-idx="${idx}" style="${idx>0?'border-top:1px solid var(--border)':''}">
+              <td style="padding:10px 12px">
+                <div style="display:flex;align-items:center;gap:10px">
+                  ${photo}
+                  <div>
+                    <div style="font-weight:600;font-size:13px">${esc(item.productName||'—')}</div>
+                    ${(prod.sku||item.sku)?`<div style="font-size:11px;color:var(--muted);font-family:var(--mono)">${esc(prod.sku||item.sku)}</div>`:''}
+                  </div>
+                </div>
+              </td>
+              <td style="padding:10px 12px;text-align:center">
+                <div style="display:flex;align-items:center;justify-content:center;gap:4px">
+                  <button onclick="changeBoxes('${id}',${idx},-1)" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);cursor:pointer;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center">−</button>
+                  <input type="number" id="boxes-${idx}" value="${item.boxes}" min="1" step="1"
+                    style="width:52px;text-align:center;background:var(--bg);border:1px solid var(--border2);border-radius:6px;color:var(--text);padding:4px 6px;font-size:13px;font-weight:700;font-family:var(--mono)"
+                    oninput="recalcRow('${id}',${idx})">
+                  <button onclick="changeBoxes('${id}',${idx},+1)" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);cursor:pointer;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center">+</button>
+                </div>
+              </td>
+              <td style="padding:10px 12px;text-align:center;color:var(--muted)">${item.unitsPerBox}</td>
+              <td style="padding:10px 12px;text-align:center;font-weight:600" id="total-units-${idx}">${item.totalUnits}</td>
+              <td style="padding:10px 12px;text-align:right;font-family:var(--mono);font-weight:700" id="row-sum-${idx}">${fmtMoney(item.totalPrice)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  ` : '<div class="empty"><div class="empty-icon">📦</div>Товаров нет</div>';
+
+  // Total
+  document.getElementById('modal-total').innerHTML = `Итого: <span id="modal-total-sum" style="color:var(--accent)">${fmtMoney(total)}</span>`;
+
+  // Action buttons
+  document.getElementById('modal-actions').innerHTML = `
+    <button class="btn btn-sm" style="background:rgba(245,158,11,0.12);border-color:var(--warning);color:var(--warning)" onclick="closeOrderModal();printOrderById('${o.id}')">🖨 Накладная</button>
+    <button class="btn btn-sm btn-primary" id="btn-save-order" onclick="saveOrderChanges('${o.id}')">💾 Сохранить</button>
+    ${o.status==='Черновик'?`<button class="btn btn-sm" style="background:var(--success-soft);border-color:var(--success);color:var(--success)" onclick="closeOrderModal();markOrdered('${o.id}')">✓ Оформить</button>`:''}
+    ${o.status!=='Закрыт'?`<button class="btn btn-sm" style="background:var(--success-soft);border-color:var(--success);color:var(--success)" onclick="closeOrderModal();closeOrder('${o.id}')">✓ Закрыть</button>`:''}
+    <button class="btn btn-sm btn-danger" onclick="closeOrderModal();delOrder('${o.id}')">✕ Удалить</button>
+  `;
+
+  document.getElementById('order-modal').classList.add('open');
+}
+
+// Изменение коробок через кнопки +/−
+function changeBoxes(orderId, idx, delta) {
+  const inp = document.getElementById(`boxes-${idx}`);
+  const newVal = Math.max(1, (parseInt(inp.value)||1) + delta);
+  inp.value = newVal;
+  recalcRow(orderId, idx);
+}
+
+// Пересчёт строки при вводе
+function recalcRow(orderId, idx) {
+  const o = orders.find(x => x.id === orderId);
+  if (!o) return;
+  const item = (o.items||[])[idx];
+  if (!item) return;
+  const boxes = Math.max(1, parseInt(document.getElementById(`boxes-${idx}`).value)||1);
+  const totalUnits = boxes * item.unitsPerBox;
+  const totalPrice = boxes * item.boxPrice;
+  document.getElementById(`total-units-${idx}`).textContent = totalUnits;
+  document.getElementById(`row-sum-${idx}`).textContent = fmtMoney(totalPrice);
+  // Пересчитываем общий итог
+  const allItems = o.items || [];
+  let grandTotal = 0;
+  allItems.forEach((it, i) => {
+    const b = i === idx ? boxes : (parseInt(document.getElementById(`boxes-${i}`)?.value)||it.boxes);
+    grandTotal += b * it.boxPrice;
+  });
+  document.getElementById('modal-total-sum').textContent = fmtMoney(grandTotal);
+}
+
+// Сохранение изменений коробок
+async function saveOrderChanges(orderId) {
+  const o = orders.find(x => x.id === orderId);
+  if (!o) return;
+  const btn = document.getElementById('btn-save-order');
+  btn.disabled = true; btn.textContent = '⏳ Сохраняем...';
+  const updatedItems = (o.items||[]).map((item, idx) => {
+    const boxes = Math.max(1, parseInt(document.getElementById(`boxes-${idx}`)?.value)||item.boxes);
+    return {
+      ...item,
+      boxes,
+      totalUnits: boxes * item.unitsPerBox,
+      totalPrice: boxes * item.boxPrice
+    };
+  });
+  const { error } = await sb.from('orders').update({ items: updatedItems, updated_at: new Date().toISOString() }).eq('id', orderId);
+  btn.disabled = false; btn.textContent = '💾 Сохранить';
+  if (error) return showToast(error.message, false);
+  o.items = updatedItems;
+  render();
+  showToast('✓ Заказ обновлён');
+}
+
+function closeOrderModal() {
+  document.getElementById('order-modal').classList.remove('open');
+}
+// Close modal on backdrop click
+document.getElementById('order-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeOrderModal();
+});
+
+async function closeOrder(id) {
+  if(!confirm('Закрыть и переместить в историю?'))return;
+  const { error } = await sb.from('orders').update({status:'Закрыт',archived:true}).eq('id',id);
+  if (error) return showToast(error.message, false);
+  orders=orders.filter(x=>x.id!==id); render(); showToast('✓ Заказ закрыт');
+}
+
+async function markOrdered(id) {
+  if(!confirm('Пометить заказ как "Оформлен"?'))return;
+  const { error } = await sb.from('orders').update({status:'Оформлен'}).eq('id',id);
+  if (error) return showToast(error.message, false);
+  const o = orders.find(x=>x.id===id);
+  if (o) o.status = 'Оформлен';
+  render(); showToast('✓ Статус обновлён');
+}
+
+async function delOrder(id) {
+  if(!confirm('Удалить заказ?'))return;
+  await sb.from('orders').delete().eq('id',id);
+  orders=orders.filter(x=>x.id!==id); render(); showToast('✓ Удалён');
+}
+
+
+async function generateOrderPdf(orders_list, sup, filename) {
+  const allItems = [];
+  orders_list.forEach(o => (o.items||[]).forEach(i => {
+    const prod = products.find(p => p.id === (i.productId||'')) || {};
+    allItems.push({...i, orderNumber: o.number, orderDate: o.date,
+      _photo: prod.photo || '', _sku: prod.sku || i.sku || ''});
+  }));
+
+  const totalBoxes = allItems.reduce((s,i)=>s+Number(i.boxes||0),0);
+  const totalUnits = allItems.reduce((s,i)=>s+Number(i.totalUnits||0),0);
+  const totalPrice = allItems.reduce((s,i)=>s+Number(i.totalPrice||0),0);
+
+  const isSingle = orders_list.length === 1;
+  const title = isSingle ? `Накладная #${esc(orders_list[0].number)}` : `Сводный заказ — ${esc(sup?.name||'')}`;
+
+  const metaLines = [];
+  if (sup?.name)     metaLines.push(`<b>Поставщик:</b> ${esc(sup.name)}`);
+  if (sup?.phone)    metaLines.push(`<b>Телефон:</b> ${esc(sup.phone)}`);
+  if (sup?.whatsapp) metaLines.push(`<b>WhatsApp:</b> ${esc(sup.whatsapp)}`);
+  if (isSingle && orders_list[0].date) metaLines.push(`<b>Дата:</b> ${orders_list[0].date}`);
+  if (!isSingle) metaLines.push(`<b>Заказы:</b> ${orders_list.map(o=>'#'+o.number).join(', ')}`);
+  metaLines.push(`<b>Сформировано:</b> ${new Date().toLocaleString('ru-RU')}`);
+
+  const rows = allItems.map((item, idx) => {
+    const photoCell = item._photo
+      ? `<img src="${item._photo}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid #ddd;display:block" crossorigin="anonymous">`
+      : `<div style="width:48px;height:48px;background:#f0f0f0;border-radius:6px;border:1px solid #ddd;display:flex;align-items:center;justify-content:center;font-size:20px">?</div>`;
+    return `<tr style="border-bottom:1px solid #eee;${idx%2===1?'background:#f9f9fc':''}">
+      <td style="padding:8px 6px;color:#888;vertical-align:middle">${idx+1}</td>
+      <td style="padding:8px 6px;vertical-align:middle">${photoCell}</td>
+      <td style="padding:8px 6px;vertical-align:middle"><b style="font-size:12px">${esc(item.productName)}</b></td>
+      <td style="padding:8px 6px;vertical-align:middle;color:#555;font-family:monospace;font-size:11px">${esc(item._sku||'—')}</td>
+      <td style="padding:8px 6px;text-align:center;vertical-align:middle;font-weight:bold">${item.boxes}</td>
+      <td style="padding:8px 6px;text-align:center;vertical-align:middle;color:#555">${item.unitsPerBox}</td>
+      <td style="padding:8px 6px;text-align:center;vertical-align:middle;font-weight:bold">${item.totalUnits}</td>
+      <td style="padding:8px 6px;text-align:right;vertical-align:middle;color:#555">${Number(item.boxPrice).toLocaleString('ru-RU')} ₸</td>
+      <td style="padding:8px 6px;text-align:right;vertical-align:middle;font-weight:bold">${Number(item.totalPrice).toLocaleString('ru-RU')} ₸</td>
+    </tr>`;
+  }).join('');
+
+  const html = `<div style="font-family:Arial,sans-serif;color:#111;font-size:12px;padding:28px;width:780px;background:#fff">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+      <h2 style="margin:0;font-size:22px;font-weight:900">${title}</h2>
+      <div style="font-size:10px;color:#888;text-align:right;line-height:1.7">${new Date().toLocaleString('ru-RU')}</div>
+    </div>
+    <div style="margin-bottom:16px;line-height:1.9;font-size:12px;padding:12px 16px;background:#f5f5f8;border-radius:8px">${metaLines.join('<br>')}</div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
+      <thead>
+        <tr style="background:#1e2334;color:#fff">
+          <th style="padding:8px 6px;text-align:left;width:24px">№</th>
+          <th style="padding:8px 6px;text-align:left;width:56px">ФОТО</th>
+          <th style="padding:8px 6px;text-align:left">НАИМЕНОВАНИЕ</th>
+          <th style="padding:8px 6px;text-align:left;width:80px">АРТИКУЛ</th>
+          <th style="padding:8px 6px;text-align:center;width:40px">КОР.</th>
+          <th style="padding:8px 6px;text-align:center;width:40px">ШТ/К</th>
+          <th style="padding:8px 6px;text-align:center;width:50px">ВСЕГО</th>
+          <th style="padding:8px 6px;text-align:right;width:80px">ЦЕНА/КОР.</th>
+          <th style="padding:8px 6px;text-align:right;width:80px">СУММА</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr style="background:#e8ecf4;font-weight:bold;font-size:13px">
+          <td colspan="4" style="padding:10px 6px;border-top:2px solid #ccc">ИТОГО</td>
+          <td style="padding:10px 6px;text-align:center;border-top:2px solid #ccc">${totalBoxes}</td>
+          <td style="border-top:2px solid #ccc"></td>
+          <td style="padding:10px 6px;text-align:center;border-top:2px solid #ccc">${totalUnits}</td>
+          <td style="border-top:2px solid #ccc"></td>
+          <td style="padding:10px 6px;text-align:right;border-top:2px solid #ccc;font-size:15px;color:#1e2334">${Number(totalPrice).toLocaleString('ru-RU')} ₸</td>
+        </tr>
+      </tfoot>
+    </table>
+    <div style="color:#aaa;font-size:10px;text-align:center">Документ сформирован автоматически</div>
+  </div>`;
+
+  showToast('⏳ Генерируем PDF...');
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-1;background:#fff';
+  wrap.innerHTML = html;
+  document.body.appendChild(wrap);
+  try {
+    const canvas = await html2canvas(wrap.firstElementChild, {
+      scale: 2, useCORS: true, allowTaint: true, backgroundColor: '#fff', logging: false
+    });
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageW = 210, pageH = 297;
+    const imgH = (canvas.height * pageW) / canvas.width;
+    let posY = 0, page = 0;
+    while (posY < imgH) {
+      if (page > 0) doc.addPage();
+      doc.addImage(imgData, 'JPEG', 0, -posY, pageW, imgH);
+      posY += pageH; page++;
+    }
+    const pdfBlob = doc.output('blob');
+    const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
+    const canShare = navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] });
+    if (canShare) { await navigator.share({ files: [pdfFile], title: filename }); }
+    else { doc.save(filename); }
+    showToast('✅ PDF сохранён!');
+  } catch(e) {
+    showToast('Ошибка: ' + e.message, false);
+  } finally {
+    document.body.removeChild(wrap);
+  }
+}
+
+function printOrderById(id) {
+  const o = orders.find(x => x.id === id);
+  if (!o?.items?.length) return showToast('В заказе нет товаров', false);
+  const sup = getSup(o.supplier_id);
+  generateOrderPdf([o], sup, `nakladnaya_${o.number}.pdf`);
+}
+
+['search','filter-sup','filter-status'].forEach(id=>document.getElementById(id).addEventListener('input',render));
+
+(async () => {
+  const user = await adminAuthGuard();
+  if (user) {
+    document.getElementById('main-header').style.display = '';
+    document.getElementById('main-content').style.display = '';
+    if (typeof onAdminLoggedIn === 'function') await onAdminLoggedIn();
+  }
+})();
+// OTP keyboard wiring
+(function() {
+  const boxes = document.querySelectorAll('#login-otp-wrap .otp-box');
+  boxes.forEach((box, i) => {
+    box.addEventListener('input', e => {
+      const v = e.target.value.replace(/\D/g,''); e.target.value = v;
+      if (v) { e.target.style.borderColor='var(--accent)'; e.target.style.background='rgba(79,110,247,0.08)'; if (i < 5) boxes[i+1].focus(); }
+      else { e.target.style.borderColor='var(--border2)'; e.target.style.background='var(--bg)'; }
+      if ([...boxes].every(b => b.value)) adminVerifyOtp();
+    });
+    box.addEventListener('keydown', e => {
+      if (e.key === 'Backspace' && !box.value && i > 0) { boxes[i-1].focus(); boxes[i-1].value = ''; boxes[i-1].style.borderColor='var(--border2)'; }
+    });
+    box.addEventListener('paste', e => {
+      e.preventDefault();
+      const paste = e.clipboardData.getData('text').replace(/\D/g,'').slice(0,6);
+      [...paste].forEach((ch,j) => { if(boxes[i+j]) { boxes[i+j].value=ch; boxes[i+j].style.borderColor='var(--accent)'; boxes[i+j].style.background='rgba(79,110,247,0.08)'; } });
+      if([...boxes].every(b=>b.value)) adminVerifyOtp();
+    });
+  });
+})();
+</script>
+</body>
+</html>

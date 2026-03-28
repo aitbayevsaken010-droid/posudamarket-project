@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Posudamart — Каталог</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../shared/client.css">
+  <style>
+    .product-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}
+    .product-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:all .18s;display:flex;flex-direction:column}
+    .product-card:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 8px 24px rgba(79,110,247,.12)}
+    .product-photo{width:100%;aspect-ratio:1/1;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:48px;overflow:hidden;flex-shrink:0}
+    .product-photo img{width:100%;height:100%;object-fit:cover;display:block}
+    .product-info{padding:12px;flex:1;display:flex;flex-direction:column;gap:4px}
+    .product-name{font-weight:700;font-size:13px;line-height:1.3}
+    .product-sup{font-size:11px;color:var(--muted)}
+    .product-price{font-size:14px;font-weight:800;color:var(--accent);font-family:var(--mono);margin-top:6px}
+    .product-units{font-size:11px;color:var(--muted);font-family:var(--mono)}
+    .cart-bar{position:fixed;bottom:0;left:0;right:0;z-index:300;background:rgba(10,13,20,0.97);backdrop-filter:blur(20px);border-top:1px solid var(--accent);padding:12px 20px;display:none;align-items:center;justify-content:space-between;gap:12px}
+    .cart-bar.visible{display:flex}
+    .sup-section{margin-bottom:28px}
+    .sup-header{display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+    .sup-logo{width:40px;height:40px;border-radius:10px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:18px;overflow:hidden;flex-shrink:0}
+    .sup-logo img{width:100%;height:100%;object-fit:cover}
+    @media(max-width:600px){.product-grid{grid-template-columns:repeat(2,1fr);gap:8px}}
+  </style>
+</head>
+<body>
+<div id="auth-loading"><div class="spinner"></div></div>
+<div id="toast"></div>
+
+<header class="topbar">
+  <div class="brand-group">
+    <a href="clt-dashboard.html" class="brand"><div class="brand-dot"></div>Posudamart</a>
+    <span class="client-badge">🛒 Клиент</span>
+  </div>
+  <nav class="nav">
+    <a href="clt-dashboard.html" class="nav-btn">🏠 Главная</a>
+    <a href="clt-catalog.html" class="nav-btn active">🛍 Каталог</a>
+    <a href="clt-orders.html" class="nav-btn">📋 Заказы</a>
+    <a href="clt-profile.html" class="nav-btn">👤 Профиль</a>
+  </nav>
+  <div class="topbar-right">
+    <span class="user-name" id="user-name">—</span>
+    <button class="btn-logout" onclick="signOut()">Выйти</button>
+  </div>
+</header>
+
+<main class="container">
+  <div class="page-head">
+    <h1>Каталог товаров</h1>
+    <input type="text" id="search" placeholder="Поиск по названию..." style="width:220px">
+  </div>
+  <div id="catalog-wrap"><div class="empty"><div class="empty-icon">🛍</div>Загрузка...</div></div>
+</main>
+
+<!-- Cart bar -->
+<div class="cart-bar" id="cart-bar">
+  <div style="display:flex;align-items:center;gap:12px">
+    <span style="font-size:20px">🛒</span>
+    <div>
+      <div style="font-weight:700" id="cart-count">0 позиций</div>
+      <div style="font-size:12px;color:var(--muted)" id="cart-total">0 ₸</div>
+    </div>
+  </div>
+  <button class="btn btn-primary" onclick="openCart()">Оформить заказ →</button>
+</div>
+
+<!-- Product detail modal -->
+<div class="modal-backdrop" id="product-modal">
+  <div class="modal" style="max-width:420px;padding:0;overflow:hidden">
+    <div id="product-photo-wrap" style="width:100%;aspect-ratio:1/1;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:64px;position:relative;overflow:hidden">
+      <span id="product-photo-ph">📦</span>
+      <img id="product-photo-img" src="" alt="" style="display:none;width:100%;height:100%;object-fit:cover;position:absolute;inset:0">
+      <div style="position:absolute;top:12px;right:12px">
+        <button class="modal-close" onclick="closeProductModal()" style="background:rgba(0,0,0,.5);border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center">✕</button>
+      </div>
+    </div>
+    <div style="padding:18px">
+      <div style="font-size:18px;font-weight:800;margin-bottom:4px" id="pm-name"></div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px" id="pm-sup"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;background:var(--surface2);border-radius:10px;padding:10px 14px;margin-bottom:14px">
+        <span style="font-size:12px;color:var(--muted)">Цена за коробку</span>
+        <span style="font-size:16px;font-weight:800;color:var(--accent);font-family:var(--mono)" id="pm-price"></span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <span style="font-size:12px;color:var(--muted)" id="pm-units-label"></span>
+        <span style="font-size:12px;color:var(--muted)" id="pm-sku"></span>
+      </div>
+      <!-- Counter -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+        <span style="font-size:12px;color:var(--muted);font-weight:600;flex-shrink:0">КОРОБОК:</span>
+        <div style="display:flex;align-items:center;flex:1;background:var(--bg);border:1px solid var(--border2);border-radius:10px;overflow:hidden">
+          <button onclick="changeQty(-1)" style="width:44px;height:44px;border:none;background:transparent;color:var(--text);font-size:20px;cursor:pointer;transition:background .1s" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">−</button>
+          <input type="number" id="pm-qty" value="1" min="1" step="1" style="flex:1;text-align:center;background:transparent;border:none;color:var(--text);font-size:18px;font-weight:700;font-family:var(--mono);outline:none;padding:0">
+          <button onclick="changeQty(1)" style="width:44px;height:44px;border:none;background:transparent;color:var(--text);font-size:20px;cursor:pointer;transition:background .1s" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">+</button>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,rgba(79,110,247,.12),rgba(79,110,247,.05));border:1px solid rgba(79,110,247,.25);border-radius:10px;padding:12px 14px;margin-bottom:16px">
+        <span style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">ИТОГО</span>
+        <span style="font-size:20px;font-weight:800;color:var(--accent);font-family:var(--mono)" id="pm-total">0 ₸</span>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="closeProductModal()">Отмена</button>
+        <button class="btn btn-primary" style="flex:2;justify-content:center" onclick="addToCart()">+ В корзину</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Cart / checkout modal -->
+<div class="modal-backdrop" id="cart-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-head">
+      <div class="modal-title">🛒 Корзина</div>
+      <button class="modal-close" onclick="closeCart()">✕</button>
+    </div>
+    <div id="cart-items-wrap"></div>
+    <div style="margin-top:16px">
+      <div class="field">
+        <label>Комментарий к заказу</label>
+        <textarea id="order-comment" placeholder="Пожелания, уточнения..."></textarea>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+      <div style="font-size:15px;font-weight:800">Итого: <span id="cart-total-modal" style="color:var(--accent)"></span></div>
+      <button class="btn btn-primary" id="btn-checkout" onclick="placeOrder()">✓ Отправить заказ</button>
+    </div>
+  </div>
+</div>
+
+<nav class="mob-nav">
+  <div class="mob-nav-inner">
+    <a href="clt-dashboard.html" class="mob-btn"><span class="ico">🏠</span>Главная</a>
+    <a href="clt-catalog.html" class="mob-btn active"><span class="ico">🛍</span>Каталог</a>
+    <a href="clt-orders.html" class="mob-btn"><span class="ico">📋</span>Заказы</a>
+    <a href="clt-profile.html" class="mob-btn"><span class="ico">👤</span>Профиль</a>
+  </div>
+</nav>
+
+<script src="../shared/client.js"></script>
+<script>
+let allProducts=[], allSuppliers=[], cart={}, currentProduct=null;
+
+(async()=>{
+  const profile = await authGuard();
+  if(!profile) return;
+
+  const [pRes, sRes] = await Promise.all([
+    sb.from('products').select('*').order('name'),
+    sb.from('suppliers').select('id,name,logo,address').eq('status','active').order('name')
+  ]);
+  allProducts = pRes.data||[];
+  allSuppliers = sRes.data||[];
+  renderCatalog();
+  document.getElementById('search').addEventListener('input', renderCatalog);
+})();
+
+function renderCatalog(){
+  const term = document.getElementById('search').value.toLowerCase();
+  const filtered = allProducts.filter(p=>
+    !term || p.name?.toLowerCase().includes(term) || p.sku?.toLowerCase().includes(term)
+  );
+  const wrap = document.getElementById('catalog-wrap');
+  if(!filtered.length){
+    wrap.innerHTML='<div class="empty"><div class="empty-icon">🛍</div>Товары не найдены</div>';
+    return;
+  }
+  // Group by supplier
+  const bySupplier={};
+  filtered.forEach(p=>{
+    const k=p.supplier_id||'__none__';
+    if(!bySupplier[k]) bySupplier[k]=[];
+    bySupplier[k].push(p);
+  });
+  let html='';
+  for(const [supId,prods] of Object.entries(bySupplier)){
+    const sup=allSuppliers.find(s=>s.id===supId)||{name:'—'};
+    const logo=sup.logo&&!sup.logo.startsWith('data:')
+      ?`<img src="${sup.logo}" style="width:100%;height:100%;object-fit:cover">`
+      :(sup.logo?`<img src="${sup.logo}" style="width:100%;height:100%;object-fit:cover">`:'🏭');
+    html+=`<div class="sup-section">
+      <div class="sup-header">
+        <div class="sup-logo">${logo}</div>
+        <div><div style="font-weight:700;font-size:15px">${esc(sup.name)}</div>
+        <div style="font-size:12px;color:var(--muted)">${prods.length} товар(ов)</div></div>
+      </div>
+      <div class="product-grid">
+        ${prods.map(p=>{
+          const inCart=cart[p.id]?.qty||0;
+          const photo=p.photo?`<img src="${p.photo}" alt="">`:`<span>📦</span>`;
+          return`<div class="product-card" onclick="openProduct('${p.id}')">
+            <div class="product-photo">${photo}</div>
+            <div class="product-info">
+              <div class="product-name">${esc(p.name)}</div>
+              <div class="product-sup">${esc(sup.name)}</div>
+              <div class="product-price">${fmtMoney(p.box_price)}<span style="font-size:10px;color:var(--muted);font-weight:400"> / кор.</span></div>
+              <div class="product-units">${p.units_per_box||1} шт/кор · ${esc(p.sku||'')}</div>
+              ${inCart>0?`<div style="margin-top:6px;font-size:11px;font-weight:700;color:var(--accent)">✓ В корзине: ${inCart} кор.</div>`:''}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }
+  wrap.innerHTML=html;
+}
+
+function openProduct(id){
+  const p=allProducts.find(x=>x.id===id);
+  if(!p) return;
+  currentProduct=p;
+  const sup=allSuppliers.find(s=>s.id===p.supplier_id)||{name:'—'};
+  document.getElementById('pm-name').textContent=p.name;
+  document.getElementById('pm-sup').textContent=sup.name;
+  document.getElementById('pm-price').textContent=fmtMoney(p.box_price)+' / кор.';
+  document.getElementById('pm-units-label').textContent=`${p.units_per_box||1} шт. в коробке`;
+  document.getElementById('pm-sku').textContent=p.sku?`Арт: ${p.sku}`:'';
+  const existQty=cart[p.id]?.qty||1;
+  document.getElementById('pm-qty').value=existQty;
+  updatePmTotal();
+  const img=document.getElementById('product-photo-img');
+  const ph=document.getElementById('product-photo-ph');
+  if(p.photo){img.src=p.photo;img.style.display='block';ph.style.display='none';}
+  else{img.style.display='none';ph.style.display='block';}
+  document.getElementById('product-modal').classList.add('open');
+}
+function closeProductModal(){document.getElementById('product-modal').classList.remove('open')}
+function changeQty(delta){
+  const inp=document.getElementById('pm-qty');
+  inp.value=Math.max(1,(parseInt(inp.value)||1)+delta);
+  updatePmTotal();
+}
+document.getElementById('pm-qty').addEventListener('input',updatePmTotal);
+function updatePmTotal(){
+  if(!currentProduct) return;
+  const qty=Math.max(1,parseInt(document.getElementById('pm-qty').value)||1);
+  document.getElementById('pm-total').textContent=fmtMoney(qty*currentProduct.box_price);
+}
+function addToCart(){
+  if(!currentProduct) return;
+  const qty=Math.max(1,parseInt(document.getElementById('pm-qty').value)||1);
+  const sup=allSuppliers.find(s=>s.id===currentProduct.supplier_id)||{name:'—'};
+  cart[currentProduct.id]={
+    product:currentProduct, sup, qty,
+    totalPrice: qty*currentProduct.box_price
+  };
+  closeProductModal();
+  updateCartBar();
+  renderCatalog();
+  showToast(`✓ ${currentProduct.name} добавлен в корзину`);
+}
+function updateCartBar(){
+  const items=Object.values(cart);
+  if(!items.length){document.getElementById('cart-bar').classList.remove('visible');return;}
+  document.getElementById('cart-bar').classList.add('visible');
+  document.getElementById('cart-count').textContent=items.length+' позиций';
+  const total=items.reduce((s,i)=>s+i.totalPrice,0);
+  document.getElementById('cart-total').textContent=fmtMoney(total);
+}
+function openCart(){
+  const items=Object.values(cart);
+  if(!items.length) return;
+  const total=items.reduce((s,i)=>s+i.totalPrice,0);
+  document.getElementById('cart-total-modal').textContent=fmtMoney(total);
+  document.getElementById('cart-items-wrap').innerHTML=`
+    <div style="overflow-x:auto;border-radius:10px;border:1px solid var(--border)">
+      <table style="width:100%;border-collapse:collapse;min-width:400px">
+        <thead><tr style="background:var(--surface2)">
+          <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;text-align:left">Товар</th>
+          <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;text-align:center">Кор.</th>
+          <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;text-align:right">Сумма</th>
+          <th style="padding:8px 4px;width:32px"></th>
+        </tr></thead>
+        <tbody>${items.map(item=>`
+          <tr style="border-top:1px solid var(--border)">
+            <td style="padding:10px 12px">
+              <div style="display:flex;align-items:center;gap:10px">
+                ${item.product.photo?`<img src="${item.product.photo}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;border:1px solid var(--border);flex-shrink:0">`:`<div style="width:36px;height:36px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px">📦</div>`}
+                <div>
+                  <div style="font-weight:600;font-size:13px">${esc(item.product.name)}</div>
+                  <div style="font-size:11px;color:var(--muted)">${esc(item.sup.name)}</div>
+                </div>
+              </div>
+            </td>
+            <td style="padding:10px 12px;text-align:center;font-weight:700">${item.qty}</td>
+            <td style="padding:10px 12px;text-align:right;font-family:var(--mono);font-weight:700">${fmtMoney(item.totalPrice)}</td>
+            <td style="padding:10px 4px;text-align:center">
+              <button onclick="removeFromCart('${item.product.id}')" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:16px">✕</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  document.getElementById('cart-modal').classList.add('open');
+}
+function closeCart(){document.getElementById('cart-modal').classList.remove('open')}
+function removeFromCart(id){
+  delete cart[id];
+  updateCartBar();
+  renderCatalog();
+  if(!Object.keys(cart).length) closeCart();
+  else openCart();
+}
+
+async function placeOrder(){
+  const items=Object.values(cart);
+  if(!items.length) return;
+  const btn=document.getElementById('btn-checkout');
+  btn.disabled=true; btn.textContent='Отправляем...';
+
+  // Group by supplier — one order per supplier
+  const bySupplier={};
+  items.forEach(item=>{
+    const k=item.product.supplier_id;
+    if(!bySupplier[k]) bySupplier[k]=[];
+    bySupplier[k].push(item);
+  });
+
+  // Get order number counter
+  const {data:setting}=await sb.from('app_settings').select('value').eq('key','next_order_number').single();
+  let nextNum=Number(setting?.value||1);
+
+  const comment=document.getElementById('order-comment').value.trim();
+  const errors=[];
+
+  for(const [supId, supItems] of Object.entries(bySupplier)){
+    const numStr=String(nextNum).padStart(4,'0');
+    const orderItems=supItems.map(item=>({
+      rowId: uid(),
+      productId: item.product.id,
+      productName: item.product.name,
+      sku: item.product.sku||'',
+      photo: item.product.photo||'',
+      boxes: item.qty,
+      unitsPerBox: Number(item.product.units_per_box||1),
+      totalUnits: item.qty*(item.product.units_per_box||1),
+      boxPrice: Number(item.product.box_price),
+      totalPrice: item.totalPrice
+    }));
+
+    const {error}=await sb.from('client_orders').insert({
+      id: uid(),
+      number: numStr,
+      client_id: currentClient.id,
+      supplier_id: supId,
+      items: orderItems,
+      status: 'Новый',
+      client_comment: comment,
+      supplier_comment: '',
+      updated_by: 'client',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+
+    if(!error){
+      await sb.from('app_settings').update({value:String(nextNum+1)}).eq('key','next_order_number');
+      nextNum++;
+    } else {
+      errors.push(error.message);
+    }
+  }
+
+  btn.disabled=false; btn.textContent='✓ Отправить заказ';
+
+  if(errors.length){
+    showToast('Ошибка: '+errors[0], false);
+    return;
+  }
+
+  cart={};
+  closeCart();
+  updateCartBar();
+  renderCatalog();
+  document.getElementById('order-comment').value='';
+  showToast('✅ Заказ отправлен поставщику!');
+  setTimeout(()=>location.href='clt-orders.html', 1500);
+}
+
+// Close modals on backdrop click
+document.getElementById('product-modal').addEventListener('click',e=>{if(e.target===document.getElementById('product-modal'))closeProductModal()});
+document.getElementById('cart-modal').addEventListener('click',e=>{if(e.target===document.getElementById('cart-modal'))closeCart()});
+</script>
+</body>
+</html>

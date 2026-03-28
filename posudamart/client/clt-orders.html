@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Posudamart — Мои заказы</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../shared/client.css">
+</head>
+<body>
+<div id="auth-loading"><div class="spinner"></div></div>
+<div id="toast"></div>
+
+<header class="topbar">
+  <div class="brand-group">
+    <a href="clt-dashboard.html" class="brand"><div class="brand-dot"></div>Posudamart</a>
+    <span class="client-badge">🛒 Клиент</span>
+  </div>
+  <nav class="nav">
+    <a href="clt-dashboard.html" class="nav-btn">🏠 Главная</a>
+    <a href="clt-catalog.html" class="nav-btn">🛍 Каталог</a>
+    <a href="clt-orders.html" class="nav-btn active">📋 Заказы</a>
+    <a href="clt-profile.html" class="nav-btn">👤 Профиль</a>
+  </nav>
+  <div class="topbar-right">
+    <span class="user-name" id="user-name">—</span>
+    <button class="btn-logout" onclick="signOut()">Выйти</button>
+  </div>
+</header>
+
+<main class="container">
+  <div class="page-head">
+    <h1>Мои заказы</h1>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <input id="search" type="text" placeholder="Поиск..." style="width:160px">
+      <select id="filter-status" style="width:180px">
+        <option value="">Все статусы</option>
+        <option value="Новый">Новый</option>
+        <option value="Изменён">Изменён поставщиком</option>
+        <option value="Подтверждён">Подтверждён</option>
+        <option value="Отменён">Отменён</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Changed orders banner -->
+  <div id="changed-banner" style="display:none;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:12px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:12px">
+    <span style="font-size:22px">⚠️</span>
+    <div>
+      <div style="font-weight:700;color:var(--warning)" id="changed-banner-text"></div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px">Поставщик изменил количество или цену. Проверьте и подтвердите.</div>
+    </div>
+  </div>
+
+  <div id="orders-container"></div>
+</main>
+
+<!-- Order detail modal -->
+<div class="modal-backdrop" id="order-modal">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title" id="modal-title">Заказ</div>
+        <div id="modal-status-line" style="margin-top:4px"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+
+    <!-- Changed notice -->
+    <div id="modal-changed-notice" style="display:none;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--warning)">
+      ⚠️ Поставщик изменил этот заказ. Проверьте изменения и подтвердите или отмените.
+    </div>
+
+    <div id="modal-sup-info" style="background:var(--surface2);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;display:flex;gap:20px;flex-wrap:wrap"></div>
+    <div id="modal-items-wrap"></div>
+
+    <!-- Supplier comment -->
+    <div id="modal-sup-comment-wrap" style="display:none;margin-top:14px;padding:12px 14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:10px">
+      <div style="font-size:11px;font-weight:700;color:var(--warning);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Комментарий поставщика</div>
+      <div id="modal-sup-comment" style="font-size:13px;color:var(--text)"></div>
+    </div>
+
+    <!-- Client comment for reply -->
+    <div id="modal-reply-wrap" style="display:none;margin-top:14px">
+      <div class="field">
+        <label>Ваш комментарий</label>
+        <textarea id="modal-client-comment" placeholder="Можно добавить уточнение..." style="min-height:60px"></textarea>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);flex-wrap:wrap;gap:10px">
+      <div style="font-size:15px;font-weight:800">Итого: <span id="modal-total" style="color:var(--accent)"></span></div>
+      <div id="modal-actions" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+    </div>
+  </div>
+</div>
+
+<nav class="mob-nav">
+  <div class="mob-nav-inner">
+    <a href="clt-dashboard.html" class="mob-btn"><span class="ico">🏠</span>Главная</a>
+    <a href="clt-catalog.html" class="mob-btn"><span class="ico">🛍</span>Каталог</a>
+    <a href="clt-orders.html" class="mob-btn active"><span class="ico">📋</span>Заказы</a>
+    <a href="clt-profile.html" class="mob-btn"><span class="ico">👤</span>Профиль</a>
+  </div>
+</nav>
+
+<script src="../shared/client.js"></script>
+<script>
+let orders=[], suppliers=[], currentOrderId=null;
+
+(async()=>{
+  const profile=await authGuard();
+  if(!profile) return;
+
+  const [oRes, sRes]=await Promise.all([
+    sb.from('client_orders').select('*').eq('client_id',profile.id).order('created_at',{ascending:false}),
+    sb.from('suppliers').select('id,name,phone,whatsapp,address,logo').order('name')
+  ]);
+  orders=oRes.data||[];
+  suppliers=sRes.data||[];
+  render();
+
+  // Changed orders banner
+  const changed=orders.filter(o=>o.status==='Изменён');
+  if(changed.length>0){
+    const b=document.getElementById('changed-banner');
+    b.style.display='flex';
+    document.getElementById('changed-banner-text').textContent=
+      `${changed.length} заказ(ов) изменены поставщиком — требуют вашего подтверждения`;
+  }
+
+  // Real-time
+  sb.channel('rt-client-orders')
+    .on('postgres_changes',{event:'*',schema:'public',table:'client_orders',filter:`client_id=eq.${profile.id}`},
+    async()=>{
+      const{data}=await sb.from('client_orders').select('*').eq('client_id',profile.id).order('created_at',{ascending:false});
+      orders=data||[];
+      render();
+      showToast('📋 Заказы обновлены');
+    }).subscribe();
+
+  ['search','filter-status'].forEach(id=>document.getElementById(id).addEventListener('input',render));
+})();
+
+function getSup(id){return suppliers.find(x=>x.id===id)||{name:'—'}}
+
+function render(){
+  const term=document.getElementById('search').value.toLowerCase();
+  const fSt=document.getElementById('filter-status').value;
+  const filtered=orders.filter(o=>{
+    const ok=!term||(o.number||'').toLowerCase().includes(term);
+    return ok&&(!fSt||o.status===fSt);
+  });
+  const container=document.getElementById('orders-container');
+  if(!filtered.length){
+    container.innerHTML='<div class="panel"><div class="empty"><div class="empty-icon">📋</div>Заказов нет</div></div>';
+    return;
+  }
+  container.innerHTML=filtered.map(o=>{
+    const sup=getSup(o.supplier_id);
+    const total=(o.items||[]).reduce((s,i)=>s+Number(i.totalPrice||0),0);
+    const isChanged=o.status==='Изменён';
+    return`<div class="panel" style="margin-bottom:10px;cursor:pointer;transition:border-color .15s${isChanged?';border-color:var(--warning)':''}" onclick="openModal('${o.id}')" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='${isChanged?'var(--warning)':'var(--border)'}'">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text)">#${esc(o.number)}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600">${esc(sup.name)}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(o.created_at?.slice(0,10)||'')} · ${(o.items||[]).length} позиций</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          ${statusBadge(o.status)}
+          <span style="font-family:var(--mono);font-weight:700">${fmtMoney(total)}</span>
+        </div>
+      </div>
+      ${isChanged?`<div style="margin-top:10px;font-size:12px;color:var(--warning);font-weight:600">⚠ Нажмите чтобы просмотреть изменения и подтвердить</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function openModal(id){
+  const o=orders.find(x=>x.id===id);
+  if(!o) return;
+  currentOrderId=id;
+  const sup=getSup(o.supplier_id);
+  const total=(o.items||[]).reduce((s,i)=>s+Number(i.totalPrice||0),0);
+  const isChanged=o.status==='Изменён';
+  const isActive=o.status==='Новый'||o.status==='Изменён';
+
+  document.getElementById('modal-title').textContent=`Заказ #${o.number}`;
+  document.getElementById('modal-status-line').innerHTML=statusBadge(o.status);
+
+  // Changed notice
+  document.getElementById('modal-changed-notice').style.display=isChanged?'block':'none';
+
+  // Supplier info
+  document.getElementById('modal-sup-info').innerHTML=`
+    <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Поставщик</span><div style="font-weight:700;margin-top:3px">${esc(sup.name)}</div></div>
+    ${sup.phone?`<div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Телефон</span><div style="font-weight:600;margin-top:3px">${esc(sup.phone)}</div></div>`:''}
+    ${sup.whatsapp?`<div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">WhatsApp</span><div style="font-weight:600;margin-top:3px">${esc(sup.whatsapp)}</div></div>`:''}
+    <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Дата</span><div style="font-weight:600;margin-top:3px">${esc(o.created_at?.slice(0,10)||'')}</div></div>
+  `;
+
+  // Items table
+  const items=o.items||[];
+  document.getElementById('modal-items-wrap').innerHTML=`
+    <div style="overflow-x:auto;border-radius:10px;border:1px solid var(--border)">
+      <table style="width:100%;border-collapse:collapse;min-width:440px">
+        <thead><tr style="background:var(--surface2)">
+          <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;text-align:left">Товар</th>
+          <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;text-align:center">Кор.</th>
+          <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;text-align:center">Шт/кор</th>
+          <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;text-align:right">Цена/кор</th>
+          <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;text-align:right">Сумма</th>
+        </tr></thead>
+        <tbody>${items.map((item,idx)=>{
+          const photo=item.photo?`<img src="${item.photo}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;border:1px solid var(--border);flex-shrink:0">`:`<div style="width:36px;height:36px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px">📦</div>`;
+          return`<tr style="${idx>0?'border-top:1px solid var(--border)':''}">
+            <td style="padding:10px 12px"><div style="display:flex;align-items:center;gap:10px">${photo}
+              <div><div style="font-weight:600;font-size:13px">${esc(item.productName||'—')}</div>
+              ${item.sku?`<div style="font-size:11px;color:var(--muted);font-family:var(--mono)">${esc(item.sku)}</div>`:''}</div>
+            </div></td>
+            <td style="padding:10px 12px;text-align:center;font-weight:700">${item.boxes}</td>
+            <td style="padding:10px 12px;text-align:center;color:var(--muted)">${item.unitsPerBox}</td>
+            <td style="padding:10px 12px;text-align:right;font-family:var(--mono)">${fmtMoney(item.boxPrice)}</td>
+            <td style="padding:10px 12px;text-align:right;font-family:var(--mono);font-weight:700">${fmtMoney(item.totalPrice)}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>`;
+
+  // Supplier comment
+  const supComWrap=document.getElementById('modal-sup-comment-wrap');
+  if(o.supplier_comment){
+    supComWrap.style.display='block';
+    document.getElementById('modal-sup-comment').textContent=o.supplier_comment;
+  } else {
+    supComWrap.style.display='none';
+  }
+
+  // Client reply comment
+  const replyWrap=document.getElementById('modal-reply-wrap');
+  replyWrap.style.display=isActive?'block':'none';
+  if(isActive) document.getElementById('modal-client-comment').value=o.client_comment||'';
+
+  document.getElementById('modal-total').textContent=fmtMoney(total);
+
+  // Actions
+  let actions='';
+  if(o.status==='Подтверждён'){
+    actions+=`<button class="btn btn-sm" style="background:rgba(245,158,11,0.12);border-color:var(--warning);color:var(--warning)" onclick="closeModal();generateInvoice('${o.id}')">🖨 Накладная</button>`;
+  }
+  if(isActive){
+    actions+=`<button class="btn btn-sm btn-success" onclick="confirmOrder('${o.id}')">✓ Подтвердить заказ</button>`;
+    actions+=`<button class="btn btn-sm btn-danger" onclick="cancelOrder('${o.id}')">✕ Отменить</button>`;
+  }
+  document.getElementById('modal-actions').innerHTML=actions;
+
+  document.getElementById('order-modal').classList.add('open');
+}
+
+function closeModal(){document.getElementById('order-modal').classList.remove('open')}
+document.getElementById('order-modal').addEventListener('click',e=>{if(e.target===document.getElementById('order-modal'))closeModal()});
+
+async function confirmOrder(id){
+  const o=orders.find(x=>x.id===id);
+  if(!o||!confirm('Подтвердить заказ?')) return;
+  const comment=document.getElementById('modal-client-comment').value.trim();
+  const{error}=await sb.from('client_orders').update({
+    status:'Подтверждён',
+    client_comment:comment,
+    updated_by:'client',
+    updated_at:new Date().toISOString()
+  }).eq('id',id);
+  if(error) return showToast(error.message,false);
+  o.status='Подтверждён';
+  o.client_comment=comment;
+  closeModal();
+  render();
+  showToast('✅ Заказ подтверждён! Формируем накладную...');
+  setTimeout(()=>generateInvoice(id),1000);
+}
+
+async function cancelOrder(id){
+  if(!confirm('Отменить заказ?')) return;
+  const{error}=await sb.from('client_orders').update({
+    status:'Отменён',
+    updated_by:'client',
+    updated_at:new Date().toISOString()
+  }).eq('id',id);
+  if(error) return showToast(error.message,false);
+  const o=orders.find(x=>x.id===id);
+  if(o) o.status='Отменён';
+  closeModal(); render();
+  showToast('Заказ отменён');
+}
+
+async function generateInvoice(id){
+  const o=orders.find(x=>x.id===id);
+  if(!o) return;
+  const sup=getSup(o.supplier_id);
+  const items=o.items||[];
+  const totalBoxes=items.reduce((s,i)=>s+Number(i.boxes||0),0);
+  const totalUnits=items.reduce((s,i)=>s+Number(i.totalUnits||0),0);
+  const totalPrice=items.reduce((s,i)=>s+Number(i.totalPrice||0),0);
+
+  const rows=items.map((item,idx)=>`
+    <tr style="border-bottom:1px solid #eee;${idx%2===1?'background:#f9f9fc':''}">
+      <td style="padding:8px 6px;color:#888">${idx+1}</td>
+      <td style="padding:8px 6px">${item.photo?`<img src="${item.photo}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid #ddd">`:''}</td>
+      <td style="padding:8px 6px;font-weight:600">${item.productName}</td>
+      <td style="padding:8px 6px;color:#555;font-family:monospace">${item.sku||'—'}</td>
+      <td style="padding:8px 6px;text-align:center;font-weight:700">${item.boxes}</td>
+      <td style="padding:8px 6px;text-align:center">${item.unitsPerBox}</td>
+      <td style="padding:8px 6px;text-align:center;font-weight:600">${item.totalUnits}</td>
+      <td style="padding:8px 6px;text-align:right">${Number(item.boxPrice).toLocaleString('ru-RU')} ₸</td>
+      <td style="padding:8px 6px;text-align:right;font-weight:700">${Number(item.totalPrice).toLocaleString('ru-RU')} ₸</td>
+    </tr>`).join('');
+
+  const html=`<div style="font-family:Arial,sans-serif;color:#111;font-size:12px;padding:28px;width:780px;background:#fff">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+      <h2 style="margin:0;font-size:22px;font-weight:900">Накладная #${o.number}</h2>
+      <div style="font-size:10px;color:#888;text-align:right">${new Date().toLocaleString('ru-RU')}</div>
+    </div>
+    <div style="margin-bottom:16px;padding:12px 16px;background:#f5f5f8;border-radius:8px;line-height:1.9;font-size:12px">
+      <b>Поставщик:</b> ${sup.name}<br>
+      ${sup.phone?`<b>Телефон:</b> ${sup.phone}<br>`:''}
+      ${sup.whatsapp?`<b>WhatsApp:</b> ${sup.whatsapp}<br>`:''}
+      <b>Дата:</b> ${o.created_at?.slice(0,10)||''}<br>
+      <b>Статус:</b> ${o.status}<br>
+      <b>Сформировано:</b> ${new Date().toLocaleString('ru-RU')}
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
+      <thead><tr style="background:#1e2334;color:#fff">
+        <th style="padding:8px 6px;text-align:left;width:24px">№</th>
+        <th style="padding:8px 6px;width:48px">Фото</th>
+        <th style="padding:8px 6px;text-align:left">Наименование</th>
+        <th style="padding:8px 6px;text-align:left;width:80px">Артикул</th>
+        <th style="padding:8px 6px;text-align:center;width:40px">Кор.</th>
+        <th style="padding:8px 6px;text-align:center;width:40px">Шт/к</th>
+        <th style="padding:8px 6px;text-align:center;width:50px">Всего</th>
+        <th style="padding:8px 6px;text-align:right;width:80px">Цена/кор</th>
+        <th style="padding:8px 6px;text-align:right;width:80px">Сумма</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr style="background:#e8ecf4;font-weight:bold;font-size:13px">
+        <td colspan="4" style="padding:10px 6px;border-top:2px solid #ccc">ИТОГО</td>
+        <td style="padding:10px 6px;text-align:center;border-top:2px solid #ccc">${totalBoxes}</td>
+        <td style="border-top:2px solid #ccc"></td>
+        <td style="padding:10px 6px;text-align:center;border-top:2px solid #ccc">${totalUnits}</td>
+        <td style="border-top:2px solid #ccc"></td>
+        <td style="padding:10px 6px;text-align:right;border-top:2px solid #ccc;font-size:15px;color:#1e2334">${Number(totalPrice).toLocaleString('ru-RU')} ₸</td>
+      </tr></tfoot>
+    </table>
+    <div style="color:#aaa;font-size:10px;text-align:center">Документ сформирован автоматически — Posudamart</div>
+  </div>`;
+
+  showToast('⏳ Генерируем PDF...');
+  const wrap=document.createElement('div');
+  wrap.style.cssText='position:fixed;left:-9999px;top:0;z-index:-1;background:#fff';
+  wrap.innerHTML=html;
+  document.body.appendChild(wrap);
+  try{
+    const canvas=await html2canvas(wrap.firstElementChild,{scale:2,useCORS:true,allowTaint:true,backgroundColor:'#fff',logging:false});
+    const imgData=canvas.toDataURL('image/jpeg',0.95);
+    const{jsPDF}=window.jspdf;
+    const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    const pageW=210,pageH=297;
+    const imgH=(canvas.height*pageW)/canvas.width;
+    let posY=0,page=0;
+    while(posY<imgH){if(page>0)doc.addPage();doc.addImage(imgData,'JPEG',0,-posY,pageW,imgH);posY+=pageH;page++;}
+    const pdfBlob=doc.output('blob');
+    const fname=`nakladnaya_${o.number}.pdf`;
+    const pdfFile=new File([pdfBlob],fname,{type:'application/pdf'});
+    if(navigator.share&&navigator.canShare&&navigator.canShare({files:[pdfFile]})){await navigator.share({files:[pdfFile],title:fname});}
+    else{doc.save(fname);}
+    // Уведомляем что накладная сформирована (поставщик увидит это в своём кабинете)
+    await sb.from('client_orders').update({invoice_generated:true}).eq('id',id).catch(()=>{});
+    showToast('✅ Накладная сохранена!');
+  }catch(e){showToast('Ошибка PDF: '+e.message,false);}
+  finally{document.body.removeChild(wrap);}
+}
+</script>
+</body>
+</html>

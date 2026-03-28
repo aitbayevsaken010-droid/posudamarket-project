@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Posudamart — Вход</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0c12;
+      --surface: #111520;
+      --surface2: #181d2e;
+      --border: #1e2640;
+      --border2: #2a3558;
+      --text: #e8ecf4;
+      --muted: #6b7a9e;
+      --accent: #4f6ef7;
+      --accent2: #7c3aed;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --font: 'Montserrat', sans-serif;
+      --mono: 'JetBrains Mono', monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .bg-orbs { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+    .orb { position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.18; animation: orbFloat 12s ease-in-out infinite; }
+    .orb-1 { width: 500px; height: 500px; background: var(--accent); top: -200px; left: -100px; animation-delay: 0s; }
+    .orb-2 { width: 400px; height: 400px; background: var(--accent2); bottom: -150px; right: -100px; animation-delay: -4s; }
+    .orb-3 { width: 300px; height: 300px; background: #06b6d4; top: 50%; left: 60%; animation-delay: -8s; }
+    @keyframes orbFloat {
+      0%, 100% { transform: translate(0,0) scale(1); }
+      33% { transform: translate(30px,-40px) scale(1.05); }
+      66% { transform: translate(-20px,20px) scale(0.97); }
+    }
+    .bg-grid {
+      position: fixed; inset: 0; z-index: 0;
+      background-image: linear-gradient(rgba(79,110,247,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(79,110,247,0.04) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+    .page { position: relative; z-index: 1; width: 100%; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
+    .card {
+      background: rgba(17,21,32,0.85); backdrop-filter: blur(24px);
+      border: 1px solid var(--border2); border-radius: 24px;
+      padding: 36px 32px; width: 100%; max-width: 440px;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(79,110,247,0.1);
+      animation: cardIn 0.5s cubic-bezier(.16,1,.3,1) both;
+    }
+    @keyframes cardIn { from { opacity:0; transform:translateY(24px) scale(0.97); } to { opacity:1; transform:none; } }
+    .logo { text-align: center; margin-bottom: 28px; }
+    .logo-icon {
+      width: 64px; height: 64px; border-radius: 18px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 28px; margin-bottom: 14px;
+      box-shadow: 0 8px 32px rgba(79,110,247,0.4);
+    }
+    .logo-title { font-size: 22px; font-weight: 900; letter-spacing: -0.5px; background: linear-gradient(135deg, #fff 30%, rgba(255,255,255,0.6)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .logo-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    /* Tabs */
+    .tabs { display: flex; background: var(--surface); border-radius: 12px; padding: 4px; margin-bottom: 24px; }
+    .tab-btn {
+      flex: 1; padding: 10px; border: none; background: transparent;
+      color: var(--muted); font-family: var(--font); font-size: 14px; font-weight: 700;
+      border-radius: 9px; cursor: pointer; transition: all .2s;
+    }
+    .tab-btn.active { background: var(--accent); color: #fff; box-shadow: 0 4px 16px rgba(79,110,247,0.4); }
+
+    /* Steps */
+    .step { display: none; animation: stepIn .3s ease both; }
+    .step.active { display: block; }
+    @keyframes stepIn { from { opacity:0; transform:translateX(10px); } to { opacity:1; transform:none; } }
+    .step-title { font-size: 18px; font-weight: 800; margin-bottom: 6px; letter-spacing: -0.3px; }
+    .step-sub { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+    .step-sub b { color: var(--text); }
+
+    /* Fields */
+    .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+    label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+    input[type="text"], input[type="email"], input[type="password"], input[type="tel"] {
+      width: 100%; background: var(--bg); border: 1px solid var(--border2);
+      border-radius: 10px; color: var(--text); padding: 12px 14px;
+      font-family: var(--font); font-size: 16px; outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,110,247,0.15); }
+    .password-wrap { position: relative; }
+    .password-wrap input { padding-right: 44px; }
+    .eye-btn {
+      position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; cursor: pointer; color: var(--muted); font-size: 18px;
+      padding: 4px; line-height: 1;
+    }
+    .eye-btn:hover { color: var(--text); }
+
+    /* OTP */
+    .otp-wrap { display: flex; gap: 8px; justify-content: center; margin: 8px 0 16px; }
+    .otp-box {
+      width: 40px; height: 52px; background: var(--bg); border: 1px solid var(--border2);
+      border-radius: 10px; color: var(--text); font-size: 20px; font-weight: 700;
+      font-family: var(--mono); text-align: center; outline: none; transition: all .15s;
+    }
+    .otp-box:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,110,247,0.2); }
+    .otp-box.filled { border-color: var(--accent); background: rgba(79,110,247,0.08); }
+
+    /* Buttons */
+    .btn {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; padding: 13px 20px; border-radius: 12px; border: none; cursor: pointer;
+      font-family: var(--font); font-size: 15px; font-weight: 700; transition: all .18s;
+    }
+    .btn-primary { background: linear-gradient(135deg, var(--accent), #6366f1); color: #fff; box-shadow: 0 4px 20px rgba(79,110,247,0.4); margin-top: 4px; }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 28px rgba(79,110,247,0.5); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .btn-ghost { background: transparent; border: 1px solid var(--border2); color: var(--muted); margin-top: 8px; }
+    .btn-ghost:hover { background: var(--surface2); color: var(--text); }
+    .spinner { width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Alert */
+    .alert { padding: 12px 14px; border-radius: 10px; font-size: 13px; font-weight: 600; margin-bottom: 14px; display: none; }
+    .alert.error   { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; }
+    .alert.success { background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.3); color: #86efac; }
+    .alert.info    { background: rgba(79,110,247,0.12); border: 1px solid rgba(79,110,247,0.3); color: #a5b4fc; }
+    .alert.show    { display: block; }
+
+    /* Forgot password */
+    .forgot-link { text-align: right; margin-top: -6px; margin-bottom: 10px; }
+    .forgot-link a { font-size: 12px; color: var(--accent); text-decoration: none; font-weight: 600; cursor: pointer; }
+    .forgot-link a:hover { text-decoration: underline; }
+
+    /* Logo upload */
+    .logo-upload-wrap { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
+    .logo-upload-preview {
+      width: 64px; height: 64px; border-radius: 14px; background: var(--surface2);
+      border: 1px dashed var(--border2); display: flex; align-items: center;
+      justify-content: center; font-size: 24px; cursor: pointer; overflow: hidden; flex-shrink: 0; transition: border-color .15s;
+    }
+    .logo-upload-preview:hover { border-color: var(--accent); }
+    .logo-upload-preview img { width: 100%; height: 100%; object-fit: cover; display: none; border-radius: 14px; }
+
+    /* Pending */
+    .pending-icon { width: 72px; height: 72px; border-radius: 50%; background: rgba(245,158,11,0.12); border: 2px solid rgba(245,158,11,0.3); display: flex; align-items: center; justify-content: center; font-size: 32px; margin: 0 auto 20px; }
+
+    /* Resend */
+    .resend-row { text-align: center; margin-top: 12px; font-size: 13px; color: var(--muted); }
+    .resend-link { color: var(--accent); cursor: pointer; font-weight: 600; background: none; border: none; font-family: var(--font); font-size: 13px; }
+    .resend-link:disabled { color: var(--muted); cursor: default; }
+
+    @media (max-width: 480px) {
+      .card { padding: 24px 16px; border-radius: 20px; }
+      .otp-box { width: 40px; height: 48px; font-size: 18px; }
+    }
+    /* iOS: prevent zoom on input focus */
+    @media (max-width: 768px) {
+      input, select, textarea { font-size: 16px !important; }
+      .card { margin: 0; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="bg-orbs">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+</div>
+<div class="bg-grid"></div>
+
+<div class="page">
+  <div class="card">
+
+    <div class="logo">
+      <div class="logo-icon">🏺</div>
+      <div class="logo-title">Posudamart</div>
+      <div class="logo-sub">Система управления поставщиками</div>
+    </div>
+
+    <div id="alert" class="alert"></div>
+
+    <!-- ── ВХОД / РЕГИСТРАЦИЯ — Переключатель ── -->
+    <div id="step-auth" class="step active">
+      <div class="tabs">
+        <button class="tab-btn active" id="tab-login" onclick="switchTab('login')">Войти</button>
+        <button class="tab-btn" id="tab-register" onclick="switchTab('register')">Регистрация</button>
+      </div>
+
+      <!-- Форма входа -->
+      <div id="form-login">
+        <div class="field">
+          <label for="login-email">Email</label>
+          <input type="email" id="login-email" placeholder="example@company.com" autocomplete="email">
+        </div>
+        <div class="field">
+          <label for="login-password">Пароль</label>
+          <div class="password-wrap">
+            <input type="password" id="login-password" placeholder="Введи пароль" autocomplete="current-password">
+            <button class="eye-btn" type="button" onclick="togglePass('login-password', this)">👁</button>
+          </div>
+        </div>
+        <div class="forgot-link"><a onclick="showStep('step-forgot')">Забыл пароль?</a></div>
+        <button class="btn btn-primary" id="btn-login">
+          <span id="btn-login-text">Войти →</span>
+          <div class="spinner" id="spinner-login"></div>
+        </button>
+      </div>
+
+      <!-- Форма регистрации -->
+      <div id="form-register" style="display:none">
+        <!-- Выбор роли -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+          <button type="button" id="role-supplier-btn" onclick="selectRegRole('supplier')"
+            style="padding:10px 8px;border-radius:10px;border:2px solid var(--accent);background:rgba(79,110,247,0.1);color:var(--text);cursor:pointer;font-family:var(--font);font-size:12px;font-weight:700;transition:all .15s;text-align:center">
+            🏭<div style="margin-top:4px">Поставщик</div>
+          </button>
+          <button type="button" id="role-client-btn" onclick="selectRegRole('client')"
+            style="padding:10px 8px;border-radius:10px;border:2px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;font-family:var(--font);font-size:12px;font-weight:700;transition:all .15s;text-align:center">
+            🛒<div style="margin-top:4px">Клиент</div>
+          </button>
+        </div>
+        <input type="hidden" id="reg-role" value="supplier">
+        <div class="field">
+          <label for="reg-email">Email</label>
+          <input type="email" id="reg-email" placeholder="example@company.com" autocomplete="email">
+        </div>
+        <div class="field">
+          <label for="reg-password">Пароль</label>
+          <div class="password-wrap">
+            <input type="password" id="reg-password" placeholder="Минимум 6 символов" autocomplete="new-password">
+            <button class="eye-btn" type="button" onclick="togglePass('reg-password', this)">👁</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="reg-password2">Повтори пароль</label>
+          <div class="password-wrap">
+            <input type="password" id="reg-password2" placeholder="Повтори пароль" autocomplete="new-password">
+            <button class="eye-btn" type="button" onclick="togglePass('reg-password2', this)">👁</button>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-signup">
+          <span id="btn-signup-text">Создать аккаунт →</span>
+          <div class="spinner" id="spinner-signup"></div>
+        </button>
+      </div>
+    </div>
+
+    <!-- ── ПОДТВЕРЖДЕНИЕ EMAIL (после регистрации) ── -->
+    <div class="step" id="step-confirm">
+      <div class="step-title">Подтверди email</div>
+      <div class="step-sub">Отправили 6-значный код на <b id="confirm-email-display"></b></div>
+      <div class="otp-wrap" id="confirm-otp-wrap">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" data-idx="0">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" data-idx="1">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" data-idx="2">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" data-idx="3">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" data-idx="4">
+        <input class="otp-box" maxlength="1" type="text" inputmode="numeric" data-idx="5">
+      </div>
+      <button class="btn btn-primary" id="btn-confirm">
+        <span id="btn-confirm-text">Подтвердить</span>
+        <div class="spinner" id="spinner-confirm"></div>
+      </button>
+      <div class="resend-row">
+        Не пришёл код? &nbsp;
+        <button class="resend-link" id="btn-resend-confirm" disabled>Отправить снова (<span id="resend-timer-confirm">60</span>с)</button>
+      </div>
+      <button class="btn btn-ghost" onclick="showStep('step-auth')">← Назад</button>
+    </div>
+
+    <!-- ── СБРОС ПАРОЛЯ ── -->
+    <div class="step" id="step-forgot">
+      <div class="step-title">Сброс пароля</div>
+      <div class="step-sub">Введи email — пришлём ссылку для сброса пароля</div>
+      <div class="field">
+        <label for="forgot-email">Email</label>
+        <input type="email" id="forgot-email" placeholder="example@company.com" onkeydown="if(event.key==='Enter')document.getElementById('btn-forgot').click()">
+      </div>
+      <button class="btn btn-primary" id="btn-forgot">
+        <span id="btn-forgot-text">Отправить ссылку →</span>
+        <div class="spinner" id="spinner-forgot"></div>
+      </button>
+      <button class="btn btn-ghost" onclick="showStep('step-auth')">← Назад</button>
+    </div>
+
+    <!-- ── СБРОС: письмо отправлено ── -->
+    <div class="step" id="step-forgot-sent">
+      <div style="text-align:center;padding:8px 0">
+        <div style="width:72px;height:72px;border-radius:50%;background:rgba(34,197,94,0.12);border:2px solid rgba(34,197,94,0.3);display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 20px">📧</div>
+        <div class="step-title" style="text-align:center">Письмо отправлено!</div>
+        <div class="step-sub" style="text-align:center;margin-bottom:20px">
+          Ссылка для сброса пароля отправлена на<br>
+          <b id="forgot-sent-email" style="color:var(--text)"></b>
+        </div>
+        <div style="background:rgba(79,110,247,0.08);border:1px solid rgba(79,110,247,0.2);border-radius:12px;padding:14px;font-size:13px;color:var(--muted);text-align:left;margin-bottom:20px">
+          ℹ️ Нажми на ссылку в письме — откроется страница для ввода нового пароля. Ссылка действительна 1 час.
+        </div>
+        <button class="btn btn-ghost" style="width:100%;justify-content:center" onclick="showStep('step-auth')">← Вернуться к входу</button>
+      </div>
+    </div>
+
+    <!-- ── СБРОС: новый пароль ── -->
+    <div class="step" id="step-forgot-newpass">
+      <div class="step-title">Новый пароль</div>
+      <div class="step-sub">Введи новый пароль для входа</div>
+      <div class="field">
+        <label>Новый пароль</label>
+        <div class="password-wrap">
+          <input type="password" id="forgot-new-pass" placeholder="Минимум 6 символов">
+          <button class="eye-btn" type="button" onclick="togglePass('forgot-new-pass',this)">👁</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Повтори пароль</label>
+        <div class="password-wrap">
+          <input type="password" id="forgot-new-pass2" placeholder="Повтори пароль">
+          <button class="eye-btn" type="button" onclick="togglePass('forgot-new-pass2',this)">👁</button>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-forgot-save">
+        <span id="btn-forgot-save-text">Сохранить пароль →</span>
+        <div class="spinner" id="spinner-forgot-save"></div>
+      </button>
+    </div>
+
+    <!-- ── ПРОФИЛЬ КОМПАНИИ (после подтверждения email) ── -->
+    <div class="step" id="step-register-profile">
+      <div class="step-title">Профиль компании</div>
+      <div class="step-sub">Заполни данные — их увидит администратор при проверке</div>
+
+      <div class="logo-upload-wrap">
+        <div class="logo-upload-preview" id="reg-logo-preview" onclick="document.getElementById('reg-logo-input').click()">
+          <span id="reg-logo-emoji">🏭</span>
+          <img id="reg-logo-img" src="" alt="">
+        </div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">Логотип компании</div>
+          <button class="btn btn-ghost" style="width:auto;padding:7px 12px;font-size:12px" onclick="document.getElementById('reg-logo-input').click()">📷 Загрузить</button>
+          <input type="file" id="reg-logo-input" accept="image/*" style="display:none">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Название компании *</label>
+        <input type="text" id="reg-name" placeholder="ИП Иванов, ТОО Посуда KZ...">
+      </div>
+      <div class="field">
+        <label>WhatsApp</label>
+        <input type="tel" id="reg-whatsapp" placeholder="+7 700 000 0000">
+      </div>
+      <div class="field">
+        <label>Телефон</label>
+        <input type="tel" id="reg-phone" placeholder="+7 700 000 0000">
+      </div>
+      <div class="field">
+        <label>Адрес / Город</label>
+        <input type="text" id="reg-address" placeholder="Алматы, ул. Абая 1">
+      </div>
+      <button class="btn btn-primary" id="btn-register">
+        <span id="btn-reg-text">Отправить заявку →</span>
+        <div class="spinner" id="spinner-reg"></div>
+      </button>
+    </div>
+
+    <!-- ── КЛИЕНТ — ДОБРО ПОЖАЛОВАТЬ ── -->
+    <div class="step" id="step-client-welcome">
+      <div style="text-align:center;padding:8px 0">
+        <div style="width:72px;height:72px;border-radius:50%;background:rgba(79,110,247,0.12);border:2px solid rgba(79,110,247,0.3);display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 20px">🛒</div>
+        <div class="step-title" style="text-align:center">Аккаунт создан!</div>
+        <div class="step-sub" style="text-align:center;margin-bottom:20px">
+          Добро пожаловать в Posudamart.<br>
+          Можешь сразу заходить в каталог и делать заказы.
+        </div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="window.location.href='client/clt-dashboard.html'">
+          Перейти в личный кабинет →
+        </button>
+      </div>
+    </div>
+
+    <!-- ── НА МОДЕРАЦИИ ── -->
+    <div class="step" id="step-pending">
+      <div style="text-align:center;padding:8px 0">
+        <div class="pending-icon">⏳</div>
+        <div class="step-title" style="text-align:center">Заявка на проверке</div>
+        <div class="step-sub" style="text-align:center;margin-bottom:20px">
+          Компания <b id="pending-name"></b> ожидает одобрения.<br>
+          Как только администратор одобрит — ты сразу сможешь войти.
+        </div>
+        <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:12px;padding:14px;font-size:13px;color:rgba(245,158,11,0.9);text-align:left;margin-bottom:20px">
+          ℹ️ Обычно проверка занимает несколько часов.
+        </div>
+        <button class="btn btn-ghost" onclick="signOut()">Выйти</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://dnpsufzgnudgrqbezioo.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRucHN1ZnpnbnVkZ3JxYmV6aW9vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjYxNjAsImV4cCI6MjA5MDA0MjE2MH0.N8qP1DfkCmJ9uKMkowtmUYQc-F_ybEyPdfTo86PIGEk';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let pendingEmail = '';
+let pendingRole = 'supplier'; // 'supplier' | 'client'
+let logoDataUrl = '';
+let logoFile = null;
+let resendInterval = null;
+
+function selectRegRole(role) {
+  pendingRole = role;
+  const supplierBtn = document.getElementById('role-supplier-btn');
+  const clientBtn   = document.getElementById('role-client-btn');
+  document.getElementById('reg-role').value = role;
+  if (role === 'supplier') {
+    supplierBtn.style.borderColor = 'var(--accent)';
+    supplierBtn.style.background  = 'rgba(79,110,247,0.1)';
+    supplierBtn.style.color       = 'var(--text)';
+    clientBtn.style.borderColor   = 'var(--border2)';
+    clientBtn.style.background    = 'transparent';
+    clientBtn.style.color         = 'var(--muted)';
+  } else {
+    clientBtn.style.borderColor   = 'var(--accent)';
+    clientBtn.style.background    = 'rgba(79,110,247,0.1)';
+    clientBtn.style.color         = 'var(--text)';
+    supplierBtn.style.borderColor = 'var(--border2)';
+    supplierBtn.style.background  = 'transparent';
+    supplierBtn.style.color       = 'var(--muted)';
+  }
+}
+
+// ── Проверка сессии при загрузке ──
+(async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) await redirectByRole(session.user);
+})();
+
+async function redirectByRole(user) {
+  const { data: profile } = await sb.from('profiles').select('role').eq('id', user.id).single();
+  if (!profile) return;
+  if (profile.role === 'admin') { window.location.href = 'admin/adm-dashboard.html'; return; }
+  if (profile.role === 'client') { window.location.href = 'client/clt-dashboard.html'; return; }
+  // role === 'supplier'
+  const { data: supplier } = await sb.from('suppliers').select('status, name').eq('user_id', user.id).single();
+  if (!supplier) {
+    // Зарегистрировался но не заполнил профиль компании — показываем форму
+    showStep('step-register-profile');
+    return;
+  }
+  if (supplier.status === 'active') { window.location.href = 'supplier/sup-dashboard.html'; return; }
+  document.getElementById('pending-name').textContent = supplier.name;
+  showStep('step-pending');
+}
+
+// ── Переключение вкладок ──
+function switchTab(tab) {
+  const isLogin = tab === 'login';
+  document.getElementById('tab-login').classList.toggle('active', isLogin);
+  document.getElementById('tab-register').classList.toggle('active', !isLogin);
+  document.getElementById('form-login').style.display = isLogin ? '' : 'none';
+  document.getElementById('form-register').style.display = isLogin ? 'none' : '';
+  hideAlert();
+}
+
+// ── Показать/скрыть пароль ──
+function togglePass(inputId, btn) {
+  const inp = document.getElementById(inputId);
+  if (inp.type === 'password') { inp.type = 'text'; btn.textContent = '🙈'; }
+  else { inp.type = 'password'; btn.textContent = '👁'; }
+}
+
+// ── Шаги ──
+function showStep(id) {
+  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  hideAlert();
+}
+
+// ── Alert ──
+function showAlert(msg, type = 'error') {
+  const el = document.getElementById('alert');
+  el.textContent = msg; el.className = `alert ${type} show`;
+  setTimeout(() => el.classList.remove('show'), 6000);
+}
+function hideAlert() { document.getElementById('alert').classList.remove('show'); }
+
+// ══ ВХОД ══
+document.getElementById('btn-login').addEventListener('click', async () => {
+  const email = document.getElementById('login-email').value.trim().toLowerCase();
+  const password = document.getElementById('login-password').value;
+  if (!email) return showAlert('Введи email');
+  if (!password) return showAlert('Введи пароль');
+
+  const btn = document.getElementById('btn-login');
+  const spinner = document.getElementById('spinner-login');
+  btn.disabled = true; spinner.style.display = 'block';
+  document.getElementById('btn-login-text').textContent = 'Входим...';
+
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+
+  btn.disabled = false; spinner.style.display = 'none';
+  document.getElementById('btn-login-text').textContent = 'Войти →';
+
+  if (error) {
+    if (error.message.includes('Invalid login') || error.message.includes('invalid_credentials')) return showAlert('Неверный email или пароль');
+    if (error.message.includes('Email not confirmed')) return showAlert('Email не подтверждён. Проверь почту или зарегистрируйся заново.');
+    return showAlert(error.message);
+  }
+  await redirectByRole(data.user);
+});
+
+// Enter на полях входа
+['login-email', 'login-password'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('btn-login').click(); });
+});
+
+// ══ РЕГИСТРАЦИЯ ══
+document.getElementById('btn-signup').addEventListener('click', async () => {
+  const email = document.getElementById('reg-email').value.trim().toLowerCase();
+  const password = document.getElementById('reg-password').value;
+  const password2 = document.getElementById('reg-password2').value;
+
+  if (!email || !email.includes('@')) return showAlert('Введи корректный email');
+  if (password.length < 6) return showAlert('Пароль должен быть минимум 6 символов');
+  if (password !== password2) return showAlert('Пароли не совпадают');
+
+  const btn = document.getElementById('btn-signup');
+  const spinner = document.getElementById('spinner-signup');
+  btn.disabled = true; spinner.style.display = 'block';
+  document.getElementById('btn-signup-text').textContent = 'Создаём...';
+
+  // Регистрируем напрямую — без лишних проверок
+  let data, error;
+  try {
+    ({ data, error } = await sb.auth.signUp({ email, password }));
+  } catch(e) {
+    btn.disabled = false; spinner.style.display = 'none';
+    document.getElementById('btn-signup-text').textContent = 'Создать аккаунт →';
+    return showAlert('Ошибка сети. Проверь подключение и попробуй снова.');
+  }
+
+  btn.disabled = false; spinner.style.display = 'none';
+  document.getElementById('btn-signup-text').textContent = 'Создать аккаунт →';
+
+  if (error) {
+    if (error.message.includes('already registered') || error.message.includes('already been registered')) {
+      switchTab('login');
+      document.getElementById('login-email').value = email;
+      return showAlert('Этот email уже зарегистрирован — переключили на вход.', 'info');
+    }
+    return showAlert(error.message);
+  }
+
+  // Supabase возвращает identities = [] если email уже занят
+  if (data.user && data.user.identities && data.user.identities.length === 0) {
+    switchTab('login');
+    document.getElementById('login-email').value = email;
+    return showAlert('Этот email уже зарегистрирован — переключили на вход.', 'info');
+  }
+
+  if (!data.user) {
+    return showAlert('Не удалось создать аккаунт. Попробуй снова.');
+  }
+
+  pendingEmail = email;
+
+  // Если email-подтверждение включено — показываем форму с кодом
+  // Если выключено — Supabase сразу даёт session, идём к профилю
+  if (data.session) {
+    // Email confirmation отключён
+    if (pendingRole === 'client') {
+      await sb.from('profiles').update({ role: 'client' }).eq('id', data.session.user.id);
+      window.location.href = 'client/clt-dashboard.html';
+    } else {
+      showStep('step-register-profile');
+    }
+  } else {
+    // Нужно подтвердить email — ждём код
+    document.getElementById('confirm-email-display').textContent = email;
+    showStep('step-confirm');
+    startResendTimer('confirm');
+    confirmOtpBoxes[0].focus();
+  }
+});
+
+// ══ ПОДТВЕРЖДЕНИЕ EMAIL (OTP) ══
+const confirmOtpBoxes = document.querySelectorAll('#confirm-otp-wrap .otp-box');
+confirmOtpBoxes.forEach((box, i) => {
+  box.addEventListener('input', e => {
+    const val = e.target.value.replace(/\D/g,'');
+    e.target.value = val;
+    if (val) { e.target.classList.add('filled'); if (i < 5) confirmOtpBoxes[i+1].focus(); }
+    else e.target.classList.remove('filled');
+    if ([...confirmOtpBoxes].every(b => b.value)) confirmEmail();
+  });
+  box.addEventListener('keydown', e => {
+    if (e.key === 'Backspace' && !box.value && i > 0) { confirmOtpBoxes[i-1].focus(); confirmOtpBoxes[i-1].value = ''; confirmOtpBoxes[i-1].classList.remove('filled'); }
+  });
+  box.addEventListener('paste', e => {
+    e.preventDefault();
+    const paste = e.clipboardData.getData('text').replace(/\D/g,'').slice(0,6);
+    [...paste].forEach((ch,j) => { if (confirmOtpBoxes[i+j]) { confirmOtpBoxes[i+j].value = ch; confirmOtpBoxes[i+j].classList.add('filled'); } });
+    if ([...confirmOtpBoxes].every(b => b.value)) confirmEmail();
+  });
+});
+
+document.getElementById('btn-confirm').addEventListener('click', confirmEmail);
+
+async function confirmEmail() {
+  const token = [...confirmOtpBoxes].map(b => b.value).join('');
+  if (token.length < 6) return;
+
+  const btn = document.getElementById('btn-confirm');
+  const spinner = document.getElementById('spinner-confirm');
+  btn.disabled = true; spinner.style.display = 'block';
+  document.getElementById('btn-confirm-text').textContent = 'Проверяем...';
+
+  const { data, error } = await sb.auth.verifyOtp({ email: pendingEmail, token, type: 'signup' });
+
+  btn.disabled = false; spinner.style.display = 'none';
+  document.getElementById('btn-confirm-text').textContent = 'Подтвердить';
+
+  if (error) {
+    confirmOtpBoxes.forEach(b => { b.value = ''; b.classList.remove('filled'); });
+    confirmOtpBoxes[0].focus();
+    return showAlert('Неверный или просроченный код');
+  }
+
+  // Email подтверждён — клиент идёт сразу в кабинет, поставщик заполняет профиль
+  if (pendingRole === 'client') {
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) {
+      await sb.from('profiles').update({ role: 'client' }).eq('id', session.user.id);
+    }
+    // Редирект — если не сработает покажем экран приветствия
+    try {
+      window.location.href = 'client/clt-dashboard.html';
+    } catch(e) {
+      showStep('step-client-welcome');
+    }
+  } else {
+    showStep('step-register-profile');
+  }
+}
+
+// Повторная отправка кода
+document.getElementById('btn-resend-confirm').addEventListener('click', async () => {
+  await sb.auth.resend({ type: 'signup', email: pendingEmail });
+  showAlert('Код отправлен повторно', 'success');
+  startResendTimer('confirm');
+});
+
+function startResendTimer(key) {
+  let secs = 60;
+  const btn = document.getElementById(`btn-resend-${key}`);
+  const timerEl = document.getElementById(`resend-timer-${key}`);
+  btn.disabled = true;
+  timerEl.textContent = secs;
+  clearInterval(resendInterval);
+  resendInterval = setInterval(() => {
+    secs--;
+    timerEl.textContent = secs;
+    if (secs <= 0) { clearInterval(resendInterval); btn.disabled = false; btn.innerHTML = 'Отправить снова'; }
+  }, 1000);
+}
+
+// ══ ПРОФИЛЬ КОМПАНИИ ══
+let logoFile2 = null;
+document.getElementById('reg-logo-input').addEventListener('change', e => {
+  const file = e.target.files?.[0]; if (!file) return;
+  logoFile2 = file;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    logoDataUrl = ev.target.result;
+    const img = document.getElementById('reg-logo-img');
+    img.src = logoDataUrl; img.style.display = 'block';
+    document.getElementById('reg-logo-emoji').style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+});
+
+document.getElementById('btn-register').addEventListener('click', async () => {
+  const name = document.getElementById('reg-name').value.trim();
+  if (!name) return showAlert('Введи название компании');
+
+  const btn = document.getElementById('btn-register');
+  const spinner = document.getElementById('spinner-reg');
+  btn.disabled = true; spinner.style.display = 'block';
+  document.getElementById('btn-reg-text').textContent = 'Сохраняем...';
+
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) { btn.disabled = false; spinner.style.display = 'none'; return showAlert('Сессия истекла. Войди заново.'); }
+
+  const { data: existing } = await sb.from('suppliers').select('id').eq('name', name).maybeSingle();
+  if (existing) { btn.disabled = false; spinner.style.display = 'none'; document.getElementById('btn-reg-text').textContent = 'Отправить заявку →'; return showAlert('Компания с таким названием уже есть'); }
+
+  let logoUrl = '';
+  if (logoFile2) {
+    const ext = logoFile2.name.split('.').pop();
+    const path = `${user.id}/logo.${ext}`;
+    const { data: up, error: upErr } = await sb.storage.from('supplier-logos').upload(path, logoFile2, { upsert: true });
+    if (!upErr && up) { const { data: urlData } = sb.storage.from('supplier-logos').getPublicUrl(path); logoUrl = urlData.publicUrl; }
+    else logoUrl = logoDataUrl;
+  }
+
+  const { error } = await sb.from('suppliers').insert({
+    user_id: user.id, name, logo: logoUrl,
+    whatsapp: document.getElementById('reg-whatsapp').value.trim(),
+    phone: document.getElementById('reg-phone').value.trim(),
+    address: document.getElementById('reg-address').value.trim(),
+    status: 'pending'
+  });
+
+  btn.disabled = false; spinner.style.display = 'none';
+  document.getElementById('btn-reg-text').textContent = 'Отправить заявку →';
+
+  if (error) return showAlert(error.message);
+  document.getElementById('pending-name').textContent = name;
+  showStep('step-pending');
+});
+
+// ══ СБРОС ПАРОЛЯ — через ссылку на email ══
+let _forgotEmail = '';
+
+document.getElementById('btn-forgot').addEventListener('click', async () => {
+  const email = document.getElementById('forgot-email').value.trim().toLowerCase();
+  if (!email || !email.includes('@')) return showAlert('Введи корректный email');
+  _forgotEmail = email;
+
+  const btn = document.getElementById('btn-forgot');
+  const spinner = document.getElementById('spinner-forgot');
+  btn.disabled = true; spinner.style.display = 'block';
+  document.getElementById('btn-forgot-text').textContent = 'Отправляем...';
+
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + '/reset-password.html'
+  });
+
+  btn.disabled = false; spinner.style.display = 'none';
+  document.getElementById('btn-forgot-text').textContent = 'Отправить ссылку →';
+
+  if (error) {
+    return showAlert(error.message);
+  }
+
+  document.getElementById('forgot-sent-email').textContent = email;
+  showStep('step-forgot-sent');
+});
+
+// Сохранение нового пароля
+document.getElementById('btn-forgot-save').addEventListener('click', async () => {
+  const p1 = document.getElementById('forgot-new-pass').value;
+  const p2 = document.getElementById('forgot-new-pass2').value;
+  if (p1.length < 6) return showAlert('Пароль минимум 6 символов');
+  if (p1 !== p2) return showAlert('Пароли не совпадают');
+
+  const btn = document.getElementById('btn-forgot-save');
+  const spinner = document.getElementById('spinner-forgot-save');
+  btn.disabled = true; spinner.style.display = 'block';
+  document.getElementById('btn-forgot-save-text').textContent = 'Сохраняем...';
+
+  const { error } = await sb.auth.updateUser({ password: p1 });
+
+  btn.disabled = false; spinner.style.display = 'none';
+  document.getElementById('btn-forgot-save-text').textContent = 'Сохранить пароль →';
+
+  if (error) return showAlert(error.message);
+
+  showAlert('✅ Пароль изменён! Войди с новым паролем.', 'success');
+  await sb.auth.signOut();
+  setTimeout(() => showStep('step-auth'), 2000);
+});
+
+async function signOut() { await sb.auth.signOut(); showStep('step-auth'); switchTab('login'); }
+</script>
+</body>
+</html>

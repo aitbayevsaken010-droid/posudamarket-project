@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Posudamart — Главная</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../shared/supplier.css">
+</head>
+<body>
+<div id="auth-loading"><div class="spinner"></div></div>
+<div id="toast"></div>
+
+<header class="topbar">
+  <div class="brand-group">
+    <a href="sup-dashboard.html" class="brand"><div class="brand-dot"></div>Posudamart</a>
+    <span class="supplier-badge">Поставщик</span>
+  </div>
+  <nav class="nav">
+    <a href="sup-dashboard.html" class="nav-btn active">🏠 Главная</a>
+    <a href="sup-products.html" class="nav-btn">📦 Товары</a>
+    <a href="sup-orders.html" class="nav-btn">📋 Заказы</a>
+    <a href="sup-profile.html" class="nav-btn">👤 Профиль</a>
+  </nav>
+  <div class="topbar-right">
+    <span class="user-name" id="user-name">—</span>
+    <button class="btn-logout" onclick="signOut()">Выйти</button>
+  </div>
+</header>
+
+<main class="container">
+  <div class="page-head">
+    <h1 id="welcome-title">Добро пожаловать!</h1>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Моих товаров</div>
+      <div class="stat-value accent" id="stat-products">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Активных заказов</div>
+      <div class="stat-value warning" id="stat-orders">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Сумма заказов</div>
+      <div class="stat-value success" id="stat-total">—</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Последние заказы</div>
+    <div id="recent-orders">
+      <div class="empty"><div class="empty-icon">📋</div>Заказов пока нет</div>
+    </div>
+  </div>
+
+  <div class="quick-links">
+    <a href="sup-products.html" class="quick-card">
+      <div class="quick-icon">📦</div>
+      <div class="quick-label">Мои товары</div>
+    </a>
+    <a href="sup-orders.html" class="quick-card">
+      <div class="quick-icon">📋</div>
+      <div class="quick-label">Заказы</div>
+    </a>
+    <a href="sup-profile.html" class="quick-card">
+      <div class="quick-icon">👤</div>
+      <div class="quick-label">Профиль</div>
+    </a>
+  </div>
+</main>
+
+<nav class="mob-nav">
+  <div class="mob-nav-inner">
+    <a href="sup-dashboard.html" class="mob-btn active"><span class="ico">🏠</span>Главная</a>
+    <a href="sup-products.html" class="mob-btn"><span class="ico">📦</span>Товары</a>
+    <a href="sup-orders.html" class="mob-btn"><span class="ico">📋</span>Заказы</a>
+    <a href="sup-profile.html" class="mob-btn"><span class="ico">👤</span>Профиль</a>
+  </div>
+</nav>
+
+<style>
+  .stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px}
+  .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+  .stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px}
+  .stat-value{font-size:28px;font-weight:800;letter-spacing:-1px}
+  .stat-value.accent{color:var(--accent)}
+  .stat-value.success{color:var(--success)}
+  .stat-value.warning{color:var(--warning)}
+  .quick-links{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}
+  .quick-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;text-align:center;text-decoration:none;color:var(--text);transition:all .15s;cursor:pointer}
+  .quick-card:hover{border-color:var(--accent);background:var(--surface2)}
+  .quick-icon{font-size:28px;margin-bottom:8px}
+  .quick-label{font-size:13px;font-weight:600;color:var(--muted)}
+  @media(max-width:600px){
+    .stats-grid{grid-template-columns:1fr 1fr;gap:8px}
+    .stat-value{font-size:22px}
+    .quick-links{grid-template-columns:repeat(3,1fr);gap:8px}
+    .quick-card{padding:14px 8px}
+    .quick-icon{font-size:22px}
+  }
+</style>
+
+<script src="../shared/supplier.js"></script>
+<script>
+(async () => {
+  const supplier = await authGuard();
+  if (!supplier) return;
+  document.getElementById('welcome-title').textContent = 'Привет, ' + supplier.name + '!';
+
+  const [{ data: products }, { data: orders }] = await Promise.all([
+    sb.from('products').select('id').eq('supplier_id', supplier.id),
+    sb.from('orders').select('*').eq('supplier_id', supplier.id).order('date', { ascending: false })
+  ]);
+
+  const active = (orders || []).filter(o => o.status !== 'Закрыт');
+  const total = (orders || []).reduce((s, o) => s + (o.items || []).reduce((ss, i) => ss + Number(i.totalPrice || 0), 0), 0);
+
+  document.getElementById('stat-products').textContent = (products || []).length;
+  document.getElementById('stat-orders').textContent = active.length;
+  document.getElementById('stat-total').textContent = fmtMoney(total);
+
+  const recent = (orders || []).slice(0, 5);
+  if (recent.length) {
+    document.getElementById('recent-orders').innerHTML = `
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Номер</th><th>Дата</th><th>Статус</th><th>Сумма</th></tr></thead>
+          <tbody>${recent.map(o => {
+            const sum = (o.items||[]).reduce((s,i)=>s+Number(i.totalPrice||0),0);
+            return `<tr>
+              <td class="mono"><strong>#${esc(o.number)}</strong></td>
+              <td>${esc(o.date)}</td>
+              <td>${statusBadge(o.status)}</td>
+              <td class="mono">${fmtMoney(sum)}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>`;
+  }
+
+  // Real-time
+  sb.channel('rt-orders').on('postgres_changes',
+    { event: '*', schema: 'public', table: 'orders', filter: `supplier_id=eq.${supplier.id}` },
+    async () => {
+      const [{ data: prods2 }, { data: orders2 }] = await Promise.all([
+        sb.from('products').select('id').eq('supplier_id', supplier.id),
+        sb.from('orders').select('*').eq('supplier_id', supplier.id).order('date', { ascending: false })
+      ]);
+      const active2 = (orders2 || []).filter(o => o.status !== 'Закрыт');
+      const total2 = (orders2 || []).reduce((s, o) => s + (o.items || []).reduce((ss, i) => ss + Number(i.totalPrice || 0), 0), 0);
+      document.getElementById('stat-products').textContent = (prods2 || []).length;
+      document.getElementById('stat-orders').textContent = active2.length;
+      document.getElementById('stat-total').textContent = fmtMoney(total2);
+      const recent2 = (orders2 || []).slice(0, 5);
+      if (recent2.length) {
+        document.getElementById('recent-orders').innerHTML = `
+          <div class="table-wrap"><table>
+            <thead><tr><th>Номер</th><th>Дата</th><th>Статус</th><th>Сумма</th></tr></thead>
+            <tbody>${recent2.map(o => {
+              const sum = (o.items||[]).reduce((s,i)=>s+Number(i.totalPrice||0),0);
+              return `<tr>
+                <td class="mono"><strong>#${esc(o.number)}</strong></td>
+                <td>${esc(o.date)}</td>
+                <td>${statusBadge(o.status)}</td>
+                <td class="mono">${fmtMoney(sum)}</td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table></div>`;
+      }
+    }
+  ).subscribe();
+})();
+</script>
+</body>
+</html>

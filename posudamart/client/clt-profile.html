@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Posudamart — Профиль</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../shared/client.css">
+</head>
+<body>
+<div id="auth-loading"><div class="spinner"></div></div>
+<div id="toast"></div>
+<header class="topbar">
+  <div class="brand-group">
+    <a href="clt-dashboard.html" class="brand"><div class="brand-dot"></div>Posudamart</a>
+    <span class="client-badge">🛒 Клиент</span>
+  </div>
+  <nav class="nav">
+    <a href="clt-dashboard.html" class="nav-btn">🏠 Главная</a>
+    <a href="clt-catalog.html" class="nav-btn">🛍 Каталог</a>
+    <a href="clt-orders.html" class="nav-btn">📋 Заказы</a>
+    <a href="clt-profile.html" class="nav-btn active">👤 Профиль</a>
+  </nav>
+  <div class="topbar-right">
+    <span class="user-name" id="user-name">—</span>
+    <button class="btn-logout" onclick="signOut()">Выйти</button>
+  </div>
+</header>
+<main class="container">
+  <div class="page-head"><h1>Профиль</h1></div>
+  <div style="max-width:460px;display:flex;flex-direction:column;gap:16px">
+    <div class="panel">
+      <div class="panel-title">Мои данные</div>
+      <div class="field"><label>Полное имя</label><input type="text" id="prof-name" placeholder="Иванов Иван Иванович"></div>
+      <div class="field"><label>Телефон</label><input type="text" id="prof-phone" placeholder="+7 700 000 0000"></div>
+      <div class="field"><label>Email (не меняется)</label><input type="email" id="prof-email" readonly></div>
+      <div style="margin-top:12px">
+        <button class="btn btn-primary" id="btn-save" onclick="saveProfile()">Сохранить</button>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Сменить пароль</div>
+      <div class="field"><label>Новый пароль</label><input type="password" id="new-pass" placeholder="Минимум 6 символов"></div>
+      <div class="field"><label>Повтори пароль</label><input type="password" id="new-pass2" placeholder="Повтори пароль"></div>
+      <div style="margin-top:4px">
+        <button class="btn btn-primary" onclick="changePass()">🔒 Сменить пароль</button>
+      </div>
+    </div>
+
+    <!-- Тема оформления -->
+    <div class="panel">
+      <div class="panel-title">🎨 Тема оформления</div>
+      <div id="theme-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px"></div>
+      <div style="font-size:12px;color:var(--muted);margin-top:12px">Тема применяется сразу и сохраняется в браузере.</div>
+    </div>
+
+    <button class="btn btn-danger" onclick="signOut()" style="justify-content:center">🚪 Выйти</button>
+  </div>
+</main>
+<nav class="mob-nav">
+  <div class="mob-nav-inner">
+    <a href="clt-dashboard.html" class="mob-btn"><span class="ico">🏠</span>Главная</a>
+    <a href="clt-catalog.html" class="mob-btn"><span class="ico">🛍</span>Каталог</a>
+    <a href="clt-orders.html" class="mob-btn"><span class="ico">📋</span>Заказы</a>
+    <a href="clt-profile.html" class="mob-btn active"><span class="ico">👤</span>Профиль</a>
+  </div>
+</nav>
+<script src="../shared/client.js"></script>
+<script>
+(async()=>{
+  const profile=await authGuard();
+  if(!profile) return;
+  document.getElementById('prof-name').value=profile.full_name||'';
+  document.getElementById('prof-phone').value=profile.phone||'';
+  document.getElementById('prof-email').value=currentUser.email||'';
+  renderThemePicker('theme-grid');
+})();
+
+async function saveProfile(){
+  const name=document.getElementById('prof-name').value.trim();
+  const phone=document.getElementById('prof-phone').value.trim();
+  const btn=document.getElementById('btn-save');
+  btn.disabled=true; btn.textContent='Сохраняем...';
+  const{error}=await sb.from('profiles').update({full_name:name,phone}).eq('id',currentClient.id);
+  btn.disabled=false; btn.textContent='Сохранить';
+  if(error) return showToast(error.message,false);
+  document.getElementById('user-name').textContent=name||currentUser.email;
+  showToast('✓ Профиль обновлён');
+}
+
+async function changePass(){
+  const p1=document.getElementById('new-pass').value;
+  const p2=document.getElementById('new-pass2').value;
+  if(p1.length<6) return showToast('Пароль минимум 6 символов',false);
+  if(p1!==p2) return showToast('Пароли не совпадают',false);
+  const{error}=await sb.auth.updateUser({password:p1});
+  if(error) return showToast(error.message,false);
+  document.getElementById('new-pass').value='';
+  document.getElementById('new-pass2').value='';
+  showToast('✓ Пароль изменён');
+}
+</script>
+</body>
+</html>
