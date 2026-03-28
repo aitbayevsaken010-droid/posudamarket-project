@@ -419,6 +419,51 @@ let logoDataUrl = '';
 let logoFile = null;
 let resendInterval = null;
 
+const REG_ROLE_STORAGE_KEY = 'pm_pending_role';
+const REG_EMAIL_STORAGE_KEY = 'pm_pending_email';
+
+function persistPendingSignupState(email, role) {
+  pendingEmail = String(email || '').trim().toLowerCase();
+  pendingRole = role === 'client' ? 'client' : 'supplier';
+  localStorage.setItem(REG_EMAIL_STORAGE_KEY, pendingEmail);
+  localStorage.setItem(REG_ROLE_STORAGE_KEY, pendingRole);
+}
+
+function restorePendingSignupState() {
+  const savedRole = localStorage.getItem(REG_ROLE_STORAGE_KEY);
+  const savedEmail = localStorage.getItem(REG_EMAIL_STORAGE_KEY);
+  if (savedRole === 'client' || savedRole === 'supplier') {
+    pendingRole = savedRole;
+    selectRegRole(savedRole);
+  } else {
+    selectRegRole(pendingRole);
+  }
+  if (savedEmail) pendingEmail = savedEmail;
+}
+
+function clearPendingSignupState() {
+  localStorage.removeItem(REG_EMAIL_STORAGE_KEY);
+  localStorage.removeItem(REG_ROLE_STORAGE_KEY);
+}
+
+async function upsertProfileRole(userId, role, email = '') {
+  if (!userId) return;
+  const safeRole = role === 'admin' ? 'admin' : role === 'supplier' ? 'supplier' : 'client';
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+
+  const payload = { role: safeRole };
+  if (normalizedEmail) payload.email = normalizedEmail;
+
+  const updateRes = await sb.from('profiles').update(payload).eq('id', userId);
+  if (!updateRes.error) return;
+
+  const insertPayload = { id: userId, ...payload };
+  const insertRes = await sb.from('profiles').insert(insertPayload);
+  if (insertRes.error) {
+    throw new Error(insertRes.error.message || 'Не удалось сохранить роль профиля');
+  }
+}
+
 function selectRegRole(role) {
   pendingRole = role;
   const supplierBtn = document.getElementById('role-supplier-btn');
@@ -442,9 +487,21 @@ function selectRegRole(role) {
 }
 
 // ── Проверка сессии при загрузке ──
+restorePendingSignupState();
 (async () => {
   const { data: { session } } = await sb.auth.getSession();
-  if (session) await redirectByRole(session.user);
+  if (session) {
+    await redirectByRole(session.user);
+    return;
+  }
+
+  const hash = window.location.hash || '';
+  if (hash.includes('type=signup') || hash.includes('type=email')) {
+    if (pendingEmail) document.getElementById('confirm-email-display').textContent = pendingEmail;
+    showStep('step-confirm');
+    startResendTimer('confirm');
+    if (confirmOtpBoxes[0]) confirmOtpBoxes[0].focus();
+  }
 })();
 
 async function redirectByRole(user) {
@@ -544,7 +601,13 @@ document.getElementById('btn-signup').addEventListener('click', async () => {
   // Регистрируем напрямую — без лишних проверок
   let data, error;
   try {
-    ({ data, error } = await sb.auth.signUp({ email, password }));
+    ({ data, error } = await sb.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { role: pendingRole }
+      }
+    }));
   } catch(e) {
     btn.disabled = false; spinner.style.display = 'none';
     document.getElementById('btn-signup-text').textContent = 'Создать аккаунт →';
@@ -574,14 +637,19 @@ document.getElementById('btn-signup').addEventListener('click', async () => {
     return showAlert('Не удалось создать аккаунт. Попробуй снова.');
   }
 
-  pendingEmail = email;
+  persistPendingSignupState(email, pendingRole);
 
   // Если email-подтверждение включено — показываем форму с кодом
   // Если выключено — Supabase сразу даёт session, идём к профилю
   if (data.session) {
     // Email confirmation отключён
+    try {
+      await upsertProfileRole(data.session.user.id, pendingRole, data.session.user.email || email);
+      clearPendingSignupState();
+    } catch (e) {
+      return showAlert(e.message || 'Не удалось сохранить выбранную роль.');
+    }
     if (pendingRole === 'client') {
-      await sb.from('profiles').update({ role: 'client' }).eq('id', data.session.user.id);
       window.location.href = 'client/clt-dashboard.html';
     } else {
       showStep('step-register-profile');
@@ -627,7 +695,8 @@ async function confirmEmail() {
   btn.disabled = true; spinner.style.display = 'block';
   document.getElementById('btn-confirm-text').textContent = 'Проверяем...';
 
-  const { data, error } = await sb.auth.verifyOtp({ email: pendingEmail, token, type: 'signup' });
+  const verifyEmail = pendingEmail || localStorage.getItem(REG_EMAIL_STORAGE_KEY) || '';
+  const { data, error } = await sb.auth.verifyOtp({ email: verifyEmail, token, type: 'signup' });
 
   btn.disabled = false; spinner.style.display = 'none';
   document.getElementById('btn-confirm-text').textContent = 'Подтвердить';
@@ -638,12 +707,17 @@ async function confirmEmail() {
     return showAlert('Неверный или просроченный код');
   }
 
+  const selectedRole = localStorage.getItem(REG_ROLE_STORAGE_KEY) || pendingRole;
+
+  try {
+    await upsertProfileRole(data.user.id, selectedRole, data.user.email || verifyEmail || pendingEmail);
+  } catch (e) {
+    return showAlert(e.message || 'Не удалось сохранить выбранную роль.');
+  }
+
   // Email подтверждён — клиент идёт сразу в кабинет, поставщик заполняет профиль
-  if (pendingRole === 'client') {
-    const { data: { session } } = await sb.auth.getSession();
-    if (session) {
-      await sb.from('profiles').update({ role: 'client' }).eq('id', session.user.id);
-    }
+  if (selectedRole === 'client') {
+    clearPendingSignupState();
     // Редирект — если не сработает покажем экран приветствия
     try {
       window.location.href = 'client/clt-dashboard.html';
@@ -657,7 +731,9 @@ async function confirmEmail() {
 
 // Повторная отправка кода
 document.getElementById('btn-resend-confirm').addEventListener('click', async () => {
-  await sb.auth.resend({ type: 'signup', email: pendingEmail });
+  const email = pendingEmail || localStorage.getItem(REG_EMAIL_STORAGE_KEY) || '';
+  if (!email) return showAlert('Сначала введи email для регистрации.');
+  await sb.auth.resend({ type: 'signup', email });
   showAlert('Код отправлен повторно', 'success');
   startResendTimer('confirm');
 });
@@ -727,6 +803,14 @@ document.getElementById('btn-register').addEventListener('click', async () => {
   document.getElementById('btn-reg-text').textContent = 'Отправить заявку →';
 
   if (error) return showAlert(error.message);
+
+  try {
+    await upsertProfileRole(user.id, 'supplier', user.email || pendingEmail);
+  } catch (e) {
+    return showAlert(e.message || 'Профиль создан, но роль не сохранена.');
+  }
+
+  clearPendingSignupState();
   document.getElementById('pending-name').textContent = name;
   showStep('step-pending');
 });
