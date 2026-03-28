@@ -446,14 +446,19 @@ function clearPendingSignupState() {
   localStorage.removeItem(REG_ROLE_STORAGE_KEY);
 }
 
-async function upsertProfileRole(userId, role) {
+async function upsertProfileRole(userId, role, email = '') {
   if (!userId) return;
   const safeRole = role === 'admin' ? 'admin' : role === 'supplier' ? 'supplier' : 'client';
+  const normalizedEmail = String(email || '').trim().toLowerCase();
 
-  const updateRes = await sb.from('profiles').update({ role: safeRole }).eq('id', userId);
+  const payload = { role: safeRole };
+  if (normalizedEmail) payload.email = normalizedEmail;
+
+  const updateRes = await sb.from('profiles').update(payload).eq('id', userId);
   if (!updateRes.error) return;
 
-  const insertRes = await sb.from('profiles').insert({ id: userId, role: safeRole });
+  const insertPayload = { id: userId, ...payload };
+  const insertRes = await sb.from('profiles').insert(insertPayload);
   if (insertRes.error) {
     throw new Error(insertRes.error.message || 'Не удалось сохранить роль профиля');
   }
@@ -639,7 +644,7 @@ document.getElementById('btn-signup').addEventListener('click', async () => {
   if (data.session) {
     // Email confirmation отключён
     try {
-      await upsertProfileRole(data.session.user.id, pendingRole);
+      await upsertProfileRole(data.session.user.id, pendingRole, data.session.user.email || email);
       clearPendingSignupState();
     } catch (e) {
       return showAlert(e.message || 'Не удалось сохранить выбранную роль.');
@@ -705,7 +710,7 @@ async function confirmEmail() {
   const selectedRole = localStorage.getItem(REG_ROLE_STORAGE_KEY) || pendingRole;
 
   try {
-    await upsertProfileRole(data.user.id, selectedRole);
+    await upsertProfileRole(data.user.id, selectedRole, data.user.email || verifyEmail || pendingEmail);
   } catch (e) {
     return showAlert(e.message || 'Не удалось сохранить выбранную роль.');
   }
@@ -800,7 +805,7 @@ document.getElementById('btn-register').addEventListener('click', async () => {
   if (error) return showAlert(error.message);
 
   try {
-    await upsertProfileRole(user.id, 'supplier');
+    await upsertProfileRole(user.id, 'supplier', user.email || pendingEmail);
   } catch (e) {
     return showAlert(e.message || 'Профиль создан, но роль не сохранена.');
   }

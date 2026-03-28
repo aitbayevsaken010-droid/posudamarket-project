@@ -116,8 +116,6 @@ async function adminAuthGuard() {
     currentAdminUser = session.user;
     setAdminEmail(session.user.email);
     showAdminShell();
-    const overlay = document.getElementById('login-overlay');
-    if (overlay) overlay.style.display = 'none';
     _validateSessionBackground(session.user.id);
     return session.user;
   } catch(e) {
@@ -159,102 +157,6 @@ function redirectToCommonLogin() {
   window.location.href = '../index.html';
 }
 
-function showLoginOverlay() {
-  // Legacy method kept for compatibility with existing page scripts.
-  redirectToCommonLogin();
-}
-
-// ── OTP login state ──
-let _adminOtpEmail = '';
-let _resendInterval = null;
-
-async function adminSendOtp() {
-  const email = document.getElementById('login-email').value.trim().toLowerCase();
-  if (!email || !email.includes('@')) return showLoginError('Введи корректный email');
-  _adminOtpEmail = email;
-
-  const btn = document.getElementById('btn-send-otp');
-  btn.disabled = true; btn.textContent = 'Отправляем...';
-
-  const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
-
-  btn.disabled = false; btn.textContent = 'Получить код →';
-
-  if (error) {
-    const msg = error.message.toLowerCase();
-    if (msg.includes('not found') || msg.includes('signup') || msg.includes('user'))
-      return showLoginError('Email не найден. Убедись что это admin-аккаунт');
-    return showLoginError(error.message);
-  }
-
-  document.getElementById('otp-email-shown').textContent = email;
-  document.getElementById('login-step-email').style.display = 'none';
-  document.getElementById('login-step-otp').style.display = 'block';
-  const boxes = document.querySelectorAll('#login-otp-wrap .otp-box');
-  if (boxes[0]) boxes[0].focus();
-  _startResendTimer();
-}
-
-async function adminVerifyOtp() {
-  const boxes = document.querySelectorAll('#login-otp-wrap .otp-box');
-  const token = [...boxes].map(b => b.value).join('');
-  if (token.length < 6) return;
-
-  const btn = document.getElementById('btn-verify-otp');
-  btn.disabled = true; btn.textContent = 'Проверяем...';
-
-  const { data, error } = await sb.auth.verifyOtp({ email: _adminOtpEmail, token, type: 'email' });
-
-  btn.disabled = false; btn.textContent = 'Войти →';
-
-  if (error) {
-    boxes.forEach(b => { b.value = ''; b.classList.remove('filled'); });
-    if (boxes[0]) boxes[0].focus();
-    return showLoginError('Неверный или просроченный код');
-  }
-
-  const { data: profile } = await sb.from('profiles').select('role').eq('id', data.user.id).single();
-  if (!profile || profile.role !== 'admin') {
-    await sb.auth.signOut();
-    return showLoginError('Нет прав администратора');
-  }
-
-  localStorage.setItem('adm_role', 'admin');
-  localStorage.setItem('adm_id', data.user.id);
-  currentAdminUser = data.user;
-  const el = document.getElementById('admin-email');
-  if (el) setAdminEmail(data.user.email);
-  document.getElementById('login-overlay').style.display = 'none';
-  showAdminShell();
-  if (typeof onAdminLoggedIn === 'function') onAdminLoggedIn();
-}
-
-function _startResendTimer() {
-  let secs = 60;
-  const btn = document.getElementById('btn-resend-otp');
-  const timerEl = document.getElementById('resend-timer');
-  if (!btn || !timerEl) return;
-  btn.disabled = true; timerEl.textContent = secs;
-  clearInterval(_resendInterval);
-  _resendInterval = setInterval(() => {
-    secs--; timerEl.textContent = secs;
-    if (secs <= 0) { clearInterval(_resendInterval); btn.disabled = false; btn.innerHTML = 'Отправить снова'; }
-  }, 1000);
-}
-
-async function adminResendOtp() {
-  if (!_adminOtpEmail) return;
-  await sb.auth.signInWithOtp({ email: _adminOtpEmail, options: { shouldCreateUser: false } });
-  showLoginError('✓ Код отправлен повторно');
-  _startResendTimer();
-}
-
-function showLoginError(msg) {
-  const el = document.getElementById('login-error');
-  if (!el) return;
-  el.textContent = msg; el.style.display = 'block';
-  setTimeout(() => el.style.display = 'none', 5000);
-}
 
 async function adminSignOut() {
   localStorage.removeItem('adm_role');
