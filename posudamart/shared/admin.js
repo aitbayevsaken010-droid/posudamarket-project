@@ -98,7 +98,7 @@ async function adminAuthGuard() {
     if (cachedEmail) setAdminEmail(cachedEmail);
 
     const { data: { session } } = await sb.auth.getSession();
-    if (!session) { showLoginOverlay(); return null; }
+    if (!session) { redirectToCommonLogin(); return null; }
 
     const { data: profile } = await sb.from('profiles').select('role').eq('id', session.user.id).single();
     if (!profile || profile.role !== 'admin') {
@@ -121,7 +121,7 @@ async function adminAuthGuard() {
     _validateSessionBackground(session.user.id);
     return session.user;
   } catch(e) {
-    showLoginOverlay();
+    redirectToCommonLogin();
     return null;
   }
 }
@@ -154,11 +154,14 @@ async function _validateSessionBackground(authenticatedId) {
   }
 }
 
+function redirectToCommonLogin() {
+  if (window.location.pathname.endsWith('/index.html') || window.location.pathname === '/') return;
+  window.location.href = '../index.html';
+}
+
 function showLoginOverlay() {
-  const loading = document.getElementById('auth-loading');
-  const overlay = document.getElementById('login-overlay');
-  if (loading) loading.style.display = 'none';
-  if (overlay) overlay.style.display = 'flex';
+  // Legacy method kept for compatibility with existing page scripts.
+  redirectToCommonLogin();
 }
 
 // ── OTP login state ──
