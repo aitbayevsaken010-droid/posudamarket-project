@@ -7,18 +7,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../shared/admin.css">
-<script>
-// Fast cache precheck — скрываем спиннер сразу если есть кэш
-(function(){
-  const role = localStorage.getItem('adm_role');
-  const id   = localStorage.getItem('adm_id');
-  if (role === 'admin' && id) {
-    const s = document.createElement('style');
-    s.textContent = '#auth-loading{display:none!important}#main-header,#main-content{display:block!important}';
-    document.head.appendChild(s);
-  }
-})();
-</script>
   <style>
     /* Catalog supplier tiles */
     .sup-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px}
@@ -227,7 +215,7 @@ let _quickProdId = null;
 (async () => {
   const user = await adminAuthGuard();
   if (!user) return;
-  // showAdminShell() вызывается внутри adminAuthGuard при кэше
+  // showAdminShell() вызывается внутри adminAuthGuard после подтверждения сессии
   // Для случая без кэша — показываем вручную
   const header = document.getElementById('main-header');
   const content = document.getElementById('main-content');
