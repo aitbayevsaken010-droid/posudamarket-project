@@ -106,19 +106,22 @@
 <script src="../shared/supplier.js"></script>
 <script>
 (async () => {
-  const supplier = await authGuard();
-  if (!supplier) return;
-  document.getElementById('welcome-title').textContent = 'Привет, ' + supplier.name + '!';
+  try {
+    const supplier = await authGuard();
+    if (!supplier) return;
+    document.getElementById('welcome-title').textContent = 'Привет, ' + supplier.name + '!';
 
-  const [{ data: products }, { data: orders }] = await Promise.all([
-    sb.from('products').select('id').eq('supplier_id', supplier.id),
-    sb.from('orders').select('*').eq('supplier_id', supplier.id).order('date', { ascending: false })
-  ]);
+    const [productsRes, ordersRes] = await Promise.all([
+      sb.from('products').select('id').eq('supplier_id', supplier.id),
+      sb.from('orders').select('*').eq('supplier_id', supplier.id).order('date', { ascending: false })
+    ]);
+    const products = getSupabaseDataOrThrow(productsRes, 'Товары поставщика');
+    const orders = getSupabaseDataOrThrow(ordersRes, 'Заказы поставщика');
 
-  const active = (orders || []).filter(o => o.status !== 'Закрыт');
-  const total = (orders || []).reduce((s, o) => s + (o.items || []).reduce((ss, i) => ss + Number(i.totalPrice || 0), 0), 0);
+    const active = orders.filter(o => o.status !== 'Закрыт');
+    const total = orders.reduce((s, o) => s + (o.items || []).reduce((ss, i) => ss + Number(i.totalPrice || 0), 0), 0);
 
-  document.getElementById('stat-products').textContent = (products || []).length;
+    document.getElementById('stat-products').textContent = products.length;
   document.getElementById('stat-orders').textContent = active.length;
   document.getElementById('stat-total').textContent = fmtMoney(total);
 
@@ -145,16 +148,18 @@
   sb.channel('rt-orders').on('postgres_changes',
     { event: '*', schema: 'public', table: 'orders', filter: `supplier_id=eq.${supplier.id}` },
     async () => {
-      const [{ data: prods2 }, { data: orders2 }] = await Promise.all([
+      const [prodsRes2, ordersRes2] = await Promise.all([
         sb.from('products').select('id').eq('supplier_id', supplier.id),
         sb.from('orders').select('*').eq('supplier_id', supplier.id).order('date', { ascending: false })
       ]);
-      const active2 = (orders2 || []).filter(o => o.status !== 'Закрыт');
-      const total2 = (orders2 || []).reduce((s, o) => s + (o.items || []).reduce((ss, i) => ss + Number(i.totalPrice || 0), 0), 0);
-      document.getElementById('stat-products').textContent = (prods2 || []).length;
+      const prods2 = getSupabaseDataOrThrow(prodsRes2, 'Товары поставщика (real-time)');
+      const orders2 = getSupabaseDataOrThrow(ordersRes2, 'Заказы поставщика (real-time)');
+      const active2 = orders2.filter(o => o.status !== 'Закрыт');
+      const total2 = orders2.reduce((s, o) => s + (o.items || []).reduce((ss, i) => ss + Number(i.totalPrice || 0), 0), 0);
+      document.getElementById('stat-products').textContent = prods2.length;
       document.getElementById('stat-orders').textContent = active2.length;
       document.getElementById('stat-total').textContent = fmtMoney(total2);
-      const recent2 = (orders2 || []).slice(0, 5);
+      const recent2 = orders2.slice(0, 5);
       if (recent2.length) {
         document.getElementById('recent-orders').innerHTML = `
           <div class="table-wrap"><table>
@@ -172,6 +177,10 @@
       }
     }
   ).subscribe();
+  } catch (err) {
+    console.error('sup-dashboard init failed', err);
+    showFatalLoadError(err?.message || 'Не удалось загрузить страницу.', () => window.location.reload());
+  }
 })();
 </script>
 </body>

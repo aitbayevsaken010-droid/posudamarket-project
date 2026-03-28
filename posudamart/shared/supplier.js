@@ -85,6 +85,46 @@ function statusBadge(s){
   return`<span class="badge badge-draft">Черновик</span>`;
 }
 
+let hasFatalLoadError = false;
+
+function getSupabaseDataOrThrow(result, context) {
+  if (result?.error) {
+    throw new Error(`${context}: ${result.error.message || 'Supabase error'}`);
+  }
+  if (result?.data == null) {
+    throw new Error(`${context}: пустой ответ от Supabase`);
+  }
+  return result.data;
+}
+
+function showFatalLoadError(message, retryFn) {
+  hasFatalLoadError = true;
+  const loadingEl = document.getElementById('auth-loading');
+  const safeMessage = esc(message || 'Не удалось загрузить данные.');
+  const retryBtn = retryFn
+    ? '<button id="fatal-retry-btn" class="btn btn-primary" style="margin-top:12px">Повторить</button>'
+    : '';
+
+  if (loadingEl) {
+    loadingEl.style.display = 'flex';
+    loadingEl.innerHTML = `
+      <div class="panel" style="max-width:420px;text-align:center;padding:20px">
+        <div style="font-size:26px;margin-bottom:8px">⚠️</div>
+        <div style="font-weight:700;margin-bottom:6px">Ошибка загрузки</div>
+        <div style="color:var(--muted);font-size:14px;line-height:1.4">${safeMessage}</div>
+        ${retryBtn}
+      </div>`;
+    if (retryFn) {
+      const btn = document.getElementById('fatal-retry-btn');
+      if (btn) btn.onclick = () => retryFn();
+    }
+    return;
+  }
+
+  alert(message || 'Не удалось загрузить данные.');
+  if (retryFn) retryFn();
+}
+
 function showToast(msg,ok=true){
   let t=document.getElementById('toast');
   t.textContent=msg;
@@ -113,21 +153,34 @@ async function resizeImage(file,max=900){
 }
 
 async function authGuard(){
-  const{data:{session}}=await sb.auth.getSession();
-  if(!session){window.location.href='../index.html';return null}
-  const{data:profile}=await sb.from('profiles').select('role').eq('id',session.user.id).single();
-  if(!profile||profile.role!=='supplier'){window.location.href='../index.html';return null}
-  const{data:supplier}=await sb.from('suppliers').select('*').eq('user_id',session.user.id).single();
-  if(!supplier){window.location.href='../index.html';return null}
-  if(supplier.status==='pending'){window.location.href='../index.html';return null}
-  if(supplier.status==='rejected'){window.location.href='../index.html';return null}
-  currentUser=session.user;
-  currentSupplier=supplier;
-  // Fill topbar
-  const nameEl=document.getElementById('user-name');
-  if(nameEl){nameEl.textContent=session.user.email||supplier.name;nameEl.title=session.user.email||'';}
-  document.getElementById('auth-loading').style.display='none';
-  return supplier;
+  hasFatalLoadError = false;
+  try {
+    const sessionRes = await sb.auth.getSession();
+    const session = getSupabaseDataOrThrow(sessionRes, 'Сессия пользователя').session;
+    if(!session){window.location.href='../index.html';return null}
+
+    const profileRes = await sb.from('profiles').select('role').eq('id',session.user.id).single();
+    const profile = getSupabaseDataOrThrow(profileRes, 'Профиль пользователя');
+    if(profile.role!=='supplier'){window.location.href='../index.html';return null}
+
+    const supplierRes = await sb.from('suppliers').select('*').eq('user_id',session.user.id).single();
+    const supplier = getSupabaseDataOrThrow(supplierRes, 'Профиль поставщика');
+    if(supplier.status==='pending'){window.location.href='../index.html';return null}
+    if(supplier.status==='rejected'){window.location.href='../index.html';return null}
+
+    currentUser=session.user;
+    currentSupplier=supplier;
+    const nameEl=document.getElementById('user-name');
+    if(nameEl){nameEl.textContent=session.user.email||supplier.name;nameEl.title=session.user.email||'';}
+    return supplier;
+  } catch (err) {
+    console.error('authGuard(supplier) failed', err);
+    showFatalLoadError(err?.message || 'Не удалось проверить авторизацию.', () => window.location.reload());
+    return null;
+  } finally {
+    const loadingEl=document.getElementById('auth-loading');
+    if(loadingEl && !hasFatalLoadError) loadingEl.style.display='none';
+  }
 }
 
 async function signOut(){await sb.auth.signOut();window.location.href='../index.html'}

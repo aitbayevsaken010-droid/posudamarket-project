@@ -78,15 +78,15 @@
 <script src="../shared/client.js"></script>
 <script>
 (async()=>{
-  const profile = await authGuard();
-  if(!profile) return;
-  document.getElementById('welcome-title').textContent = 'Привет, ' + (profile.full_name || profile.email) + '!';
+  try {
+    const profile = await authGuard();
+    if(!profile) return;
+    document.getElementById('welcome-title').textContent = 'Привет, ' + (profile.full_name || profile.email) + '!';
 
-  const {data:orders} = await sb.from('client_orders')
-    .select('*').eq('client_id', profile.id)
-    .order('created_at',{ascending:false});
-
-  const all = orders||[];
+    const ordersRes = await sb.from('client_orders')
+      .select('*').eq('client_id', profile.id)
+      .order('created_at',{ascending:false});
+    const all = getSupabaseDataOrThrow(ordersRes, 'Список заказов клиента');
   const active    = all.filter(o=>o.status!=='Отменён'&&o.status!=='Подтверждён');
   const changed   = all.filter(o=>o.status==='Изменён');
   const confirmed = all.filter(o=>o.status==='Подтверждён');
@@ -116,6 +116,10 @@
           </tr>`;
         }).join('')}</tbody>
       </table></div>`;
+  }
+  } catch (err) {
+    console.error('clt-dashboard init failed', err);
+    showFatalLoadError(err?.message || 'Не удалось загрузить страницу.', () => window.location.reload());
   }
 })();
 </script>

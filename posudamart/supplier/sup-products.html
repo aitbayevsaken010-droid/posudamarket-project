@@ -134,22 +134,27 @@
 let products = [], categories = [], pfPhotoData = '';
 
 (async () => {
-  const supplier = await authGuard();
-  if (!supplier) return;
-  await Promise.all([loadCategories(), loadProducts()]);
+  try {
+    const supplier = await authGuard();
+    if (!supplier) return;
+    await Promise.all([loadCategories(), loadProducts()]);
+  } catch (err) {
+    console.error('sup-products init failed', err);
+    showFatalLoadError(err?.message || 'Не удалось загрузить страницу товаров.', () => window.location.reload());
+  }
 })();
 
 async function loadCategories() {
-  const { data } = await sb.from('categories').select('*').order('name');
-  categories = data || [];
+  const res = await sb.from('categories').select('*').order('name');
+  categories = getSupabaseDataOrThrow(res, 'Категории');
   const sel = document.getElementById('pf-category');
   sel.innerHTML = '<option value="">— выбери категорию —</option>';
   categories.forEach(c => sel.innerHTML += `<option value="${c.id}">${esc(c.name)}</option>`);
 }
 
 async function loadProducts() {
-  const { data } = await sb.from('products').select('*').eq('supplier_id', currentSupplier.id).order('name');
-  products = data || [];
+  const res = await sb.from('products').select('*').eq('supplier_id', currentSupplier.id).order('name');
+  products = getSupabaseDataOrThrow(res, 'Товары поставщика');
   render();
 }
 
