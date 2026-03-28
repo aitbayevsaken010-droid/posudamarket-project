@@ -78,6 +78,46 @@ function fmtNum(n){return Number(n||0).toLocaleString('ru-RU')}
 function uid(){return crypto.randomUUID()}
 function esc(s){const d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML}
 
+let hasFatalLoadError = false;
+
+function getSupabaseDataOrThrow(result, context) {
+  if (result?.error) {
+    throw new Error(`${context}: ${result.error.message || 'Supabase error'}`);
+  }
+  if (result?.data == null) {
+    throw new Error(`${context}: пустой ответ от Supabase`);
+  }
+  return result.data;
+}
+
+function showFatalLoadError(message, retryFn) {
+  hasFatalLoadError = true;
+  const loadingEl = document.getElementById('auth-loading');
+  const safeMessage = esc(message || 'Не удалось загрузить данные.');
+  const retryBtn = retryFn
+    ? '<button id="fatal-retry-btn" class="btn btn-primary" style="margin-top:12px">Повторить</button>'
+    : '';
+
+  if (loadingEl) {
+    loadingEl.style.display = 'flex';
+    loadingEl.innerHTML = `
+      <div class="panel" style="max-width:420px;text-align:center;padding:20px">
+        <div style="font-size:26px;margin-bottom:8px">⚠️</div>
+        <div style="font-weight:700;margin-bottom:6px">Ошибка загрузки</div>
+        <div style="color:var(--muted);font-size:14px;line-height:1.4">${safeMessage}</div>
+        ${retryBtn}
+      </div>`;
+    if (retryFn) {
+      const btn = document.getElementById('fatal-retry-btn');
+      if (btn) btn.onclick = () => retryFn();
+    }
+    return;
+  }
+
+  alert(message || 'Не удалось загрузить данные.');
+  if (retryFn) retryFn();
+}
+
 function showToast(msg,ok=true){
   let t=document.getElementById('toast');
   t.textContent=msg;
@@ -97,17 +137,29 @@ function statusBadge(s){
 
 // Auth guard
 async function authGuard(){
-  const{data:{session}}=await sb.auth.getSession();
-  if(!session){window.location.href='../index.html';return null}
-  const{data:profile}=await sb.from('profiles').select('*').eq('id',session.user.id).single();
-  if(!profile||profile.role!=='client'){window.location.href='../index.html';return null}
-  currentUser=session.user;
-  currentClient=profile;
-  const nameEl=document.getElementById('user-name');
-  if(nameEl) nameEl.textContent=profile.full_name||session.user.email;
-  const loadingEl=document.getElementById('auth-loading');
-  if(loadingEl) loadingEl.style.display='none';
-  return profile;
+  hasFatalLoadError = false;
+  try {
+    const sessionRes = await sb.auth.getSession();
+    const session = getSupabaseDataOrThrow(sessionRes, 'Сессия пользователя').session;
+    if(!session){window.location.href='../index.html';return null}
+
+    const profileRes = await sb.from('profiles').select('*').eq('id',session.user.id).single();
+    const profile = getSupabaseDataOrThrow(profileRes, 'Профиль пользователя');
+    if(profile.role!=='client'){window.location.href='../index.html';return null}
+
+    currentUser=session.user;
+    currentClient=profile;
+    const nameEl=document.getElementById('user-name');
+    if(nameEl) nameEl.textContent=profile.full_name||session.user.email;
+    return profile;
+  } catch (err) {
+    console.error('authGuard(client) failed', err);
+    showFatalLoadError(err?.message || 'Не удалось проверить авторизацию.', () => window.location.reload());
+    return null;
+  } finally {
+    const loadingEl=document.getElementById('auth-loading');
+    if(loadingEl && !hasFatalLoadError) loadingEl.style.display='none';
+  }
 }
 
 async function signOut(){await sb.auth.signOut();window.location.href='../index.html'}

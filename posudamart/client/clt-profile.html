@@ -71,12 +71,17 @@
 <script src="../shared/client.js"></script>
 <script>
 (async()=>{
-  const profile=await authGuard();
-  if(!profile) return;
-  document.getElementById('prof-name').value=profile.full_name||'';
-  document.getElementById('prof-phone').value=profile.phone||'';
-  document.getElementById('prof-email').value=currentUser.email||'';
-  renderThemePicker('theme-grid');
+  try {
+    const profile=await authGuard();
+    if(!profile) return;
+    document.getElementById('prof-name').value=profile.full_name||'';
+    document.getElementById('prof-phone').value=profile.phone||'';
+    document.getElementById('prof-email').value=currentUser.email||'';
+    renderThemePicker('theme-grid');
+  } catch (err) {
+    console.error('clt-profile init failed', err);
+    showFatalLoadError(err?.message || 'Не удалось загрузить профиль.', () => window.location.reload());
+  }
 })();
 
 async function saveProfile(){

@@ -121,10 +121,11 @@ function switchTab(tab) {
 }
 
 (async () => {
-  const supplier = await authGuard();
-  if (!supplier) return;
-  await loadOrders();
-  await loadClientOrders();
+  try {
+    const supplier = await authGuard();
+    if (!supplier) return;
+    await loadOrders();
+    await loadClientOrders();
 
   sb.channel('rt-orders').on('postgres_changes',
     { event: '*', schema: 'public', table: 'orders', filter: `supplier_id=eq.${supplier.id}` },
@@ -135,13 +136,17 @@ function switchTab(tab) {
     { event: '*', schema: 'public', table: 'client_orders', filter: `supplier_id=eq.${supplier.id}` },
     async () => { await loadClientOrders(); showToast('🛒 Новый заказ от клиента!'); }
   ).subscribe();
+  } catch (err) {
+    console.error('sup-orders init failed', err);
+    showFatalLoadError(err?.message || 'Не удалось загрузить заказы.', () => window.location.reload());
+  }
 })();
 
 // ── Admin orders (from Posudamart) ──
 async function loadOrders() {
-  const { data } = await sb.from('orders').select('*')
+  const res = await sb.from('orders').select('*')
     .eq('supplier_id', currentSupplier.id).order('date', { ascending: false });
-  orders = data || [];
+  orders = getSupabaseDataOrThrow(res, 'Заказы Posudamart');
   render();
 }
 
@@ -213,10 +218,10 @@ function openAdminOrderModal(id) {
 
 // ── Client orders ──
 async function loadClientOrders() {
-  const { data } = await sb.from('client_orders').select('*')
+  const res = await sb.from('client_orders').select('*')
     .eq('supplier_id', currentSupplier.id)
     .order('created_at', { ascending: false });
-  clientOrders = data || [];
+  clientOrders = getSupabaseDataOrThrow(res, 'Заказы клиентов');
   renderClientOrders();
   // Show badge if new orders
   const newCount = clientOrders.filter(o => o.status === 'Новый').length;

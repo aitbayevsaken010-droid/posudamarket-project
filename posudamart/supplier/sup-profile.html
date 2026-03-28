@@ -120,28 +120,33 @@ function toggleEye(id, btn) {
 }
 
 (async () => {
-  const supplier = await authGuard();
-  if (!supplier) return;
+  try {
+    const supplier = await authGuard();
+    if (!supplier) return;
 
-  // Fill form
-  document.getElementById('prof-name').value = supplier.name || '';
-  document.getElementById('prof-whatsapp').value = supplier.whatsapp || '';
-  document.getElementById('prof-phone').value = supplier.phone || '';
-  document.getElementById('prof-address').value = supplier.address || '';
-  document.getElementById('prof-comment').value = supplier.comment || '';
-  document.getElementById('prof-email').value = currentUser.email || '';
-  logoData = supplier.logo || '';
-  if (logoData) {
-    document.getElementById('logo-img').src = logoData;
-    document.getElementById('logo-img').style.display = 'block';
-    document.getElementById('logo-emoji').style.display = 'none';
+    // Fill form
+    document.getElementById('prof-name').value = supplier.name || '';
+    document.getElementById('prof-whatsapp').value = supplier.whatsapp || '';
+    document.getElementById('prof-phone').value = supplier.phone || '';
+    document.getElementById('prof-address').value = supplier.address || '';
+    document.getElementById('prof-comment').value = supplier.comment || '';
+    document.getElementById('prof-email').value = currentUser.email || '';
+    logoData = supplier.logo || '';
+    if (logoData) {
+      document.getElementById('logo-img').src = logoData;
+      document.getElementById('logo-img').style.display = 'block';
+      document.getElementById('logo-emoji').style.display = 'none';
+    }
+    if (supplier.status === 'rejected') {
+      document.getElementById('status-badge').textContent = 'Отклонён';
+      document.getElementById('status-badge').className = 'badge badge-danger';
+    }
+    // Render theme picker
+    renderThemePicker('theme-grid');
+  } catch (err) {
+    console.error('sup-profile init failed', err);
+    showFatalLoadError(err?.message || 'Не удалось загрузить профиль.', () => window.location.reload());
   }
-  if (supplier.status === 'rejected') {
-    document.getElementById('status-badge').textContent = 'Отклонён';
-    document.getElementById('status-badge').className = 'badge badge-danger';
-  }
-  // Render theme picker
-  renderThemePicker('theme-grid');
 })();
 
 document.getElementById('logo-input').addEventListener('change', async e => {

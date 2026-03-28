@@ -147,17 +147,22 @@
 let allProducts=[], allSuppliers=[], cart={}, currentProduct=null;
 
 (async()=>{
-  const profile = await authGuard();
-  if(!profile) return;
+  try {
+    const profile = await authGuard();
+    if(!profile) return;
 
-  const [pRes, sRes] = await Promise.all([
-    sb.from('products').select('*').order('name'),
-    sb.from('suppliers').select('id,name,logo,address').eq('status','active').order('name')
-  ]);
-  allProducts = pRes.data||[];
-  allSuppliers = sRes.data||[];
-  renderCatalog();
-  document.getElementById('search').addEventListener('input', renderCatalog);
+    const [pRes, sRes] = await Promise.all([
+      sb.from('products').select('*').order('name'),
+      sb.from('suppliers').select('id,name,logo,address').eq('status','active').order('name')
+    ]);
+    allProducts = getSupabaseDataOrThrow(pRes, 'Каталог товаров');
+    allSuppliers = getSupabaseDataOrThrow(sRes, 'Список поставщиков');
+    renderCatalog();
+    document.getElementById('search').addEventListener('input', renderCatalog);
+  } catch (err) {
+    console.error('clt-catalog init failed', err);
+    showFatalLoadError(err?.message || 'Не удалось загрузить каталог.', () => window.location.reload());
+  }
 })();
 
 function renderCatalog(){
