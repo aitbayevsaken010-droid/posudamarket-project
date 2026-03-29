@@ -34,7 +34,13 @@
 <main class="container">
   <div class="page-head">
     <h1>Мои товары</h1>
-    <span style="color:var(--muted);font-size:13px" id="products-count">0 товаров</span>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <input id="search-products" type="text" placeholder="Поиск: название или артикул" style="width:260px">
+      <select id="filter-category" style="width:220px">
+        <option value="">Все категории</option>
+      </select>
+      <span style="color:var(--muted);font-size:13px;display:flex;align-items:center" id="products-count">0 товаров</span>
+    </div>
   </div>
 
   <div class="split">
@@ -77,12 +83,9 @@
           <label>Фото товара</label>
           <div class="photo-wrap">
             <div class="photo-ph" id="pf-ph" onclick="document.getElementById('pf-photo').click()">+</div>
-            <img class="photo-preview-img" id="pf-preview" alt="">
-            <div style="display:flex;flex-direction:column;gap:6px">
-              <button class="btn btn-sm" onclick="document.getElementById('pf-photo').click()">📷 Фото</button>
-              <button class="btn btn-sm btn-danger" id="pf-remove">✕ Убрать</button>
-            </div>
+            <img class="photo-preview-img" id="pf-preview" alt="" onclick="document.getElementById('pf-photo').click()" style="cursor:pointer">
           </div>
+          <button class="btn btn-sm btn-danger" id="pf-remove" style="margin-top:8px">✕ Убрать фото</button>
           <input type="file" id="pf-photo" accept="image/*" style="display:none">
           <div style="font-size:11px;color:var(--muted);margin-top:4px">Макс. 900×900px, JPEG</div>
         </div>
@@ -150,8 +153,13 @@ async function loadCategories() {
   const res = await sb.from('categories').select('*').order('name');
   categories = getSupabaseDataOrThrow(res, 'Категории');
   const sel = document.getElementById('pf-category');
+  const listSel = document.getElementById('filter-category');
   sel.innerHTML = '<option value="">— выбери категорию —</option>';
-  categories.forEach(c => sel.innerHTML += `<option value="${c.id}">${esc(c.name)}</option>`);
+  listSel.innerHTML = '<option value="">Все категории</option>';
+  categories.forEach(c => {
+    sel.innerHTML += `<option value="${c.id}">${esc(c.name)}</option>`;
+    listSel.innerHTML += `<option value="${c.id}">${esc(c.name)}</option>`;
+  });
 }
 
 async function loadProducts() {
@@ -161,14 +169,21 @@ async function loadProducts() {
 }
 
 function render() {
+  const term = (document.getElementById('search-products').value || '').toLowerCase().trim();
+  const filterCat = document.getElementById('filter-category').value;
+  const filtered = products.filter(p => {
+    const matchesTerm = !term || (p.name || '').toLowerCase().includes(term) || (p.sku || '').toLowerCase().includes(term);
+    const matchesCat = !filterCat || p.category_id === filterCat;
+    return matchesTerm && matchesCat;
+  });
   const tbody = document.getElementById('products-tbody');
-  document.getElementById('count').textContent = products.length;
-  document.getElementById('products-count').textContent = products.length + ' товаров';
-  if (!products.length) {
+  document.getElementById('count').textContent = filtered.length;
+  document.getElementById('products-count').textContent = `${filtered.length} из ${products.length} товаров`;
+  if (!filtered.length) {
     tbody.innerHTML = '<tr><td colspan="6" class="empty"><div class="empty-icon">📦</div>Товаров пока нет — добавь первый!</td></tr>';
     return;
   }
-  tbody.innerHTML = products.map(p => {
+  tbody.innerHTML = filtered.map(p => {
     const cat = categories.find(c => c.id === p.category_id)?.name || '—';
     const safePhoto = sanitizeImageUrl(p.photo||'');
     const photo = safePhoto
@@ -219,6 +234,7 @@ function setPhotoPreview(url) {
     document.getElementById('pf-box-price').value = n > 0 ? (u*n).toFixed(2) : '';
   });
 });
+['search-products','filter-category'].forEach(id => document.getElementById(id).addEventListener('input', render));
 
 function resetForm() {
   document.getElementById('pf-id').value = '';
@@ -265,18 +281,27 @@ document.getElementById('pf-submit').addEventListener('click', async () => {
   if (!(unitPrice > 0)) return showToast('Введи цену за штуку', false);
   if (!Number.isInteger(units) || units <= 0) return showToast('Штук в коробке — целое число > 0', false);
 
+  const editId = document.getElementById('pf-id').value;
+  const sku = document.getElementById('pf-sku').value.trim();
+  if (sku) {
+    const localDup = products.find(p => p.sku && p.sku.toLowerCase() === sku.toLowerCase() && p.id !== editId);
+    if (localDup) return showToast('Артикул уже существует. Укажи уникальный SKU.', false);
+    const dupRes = await sb.from('products').select('id').eq('supplier_id', currentSupplier.id).ilike('sku', sku).limit(1);
+    const dupRows = dupRes.data || [];
+    if (dupRows.find(r => r.id !== editId)) return showToast('Артикул уже существует. Укажи уникальный SKU.', false);
+  }
+
   const btn = document.getElementById('pf-submit');
   btn.disabled = true; btn.textContent = 'Сохраняем...';
 
   const payload = {
     supplier_id: currentSupplier.id, name,
-    category_id: catId, sku: document.getElementById('pf-sku').value.trim(),
+    category_id: catId, sku,
     box_price: unitPrice * units, units_per_box: units,
     note: document.getElementById('pf-note').value.trim(),
     photo: pfPhotoData || '', updated_at: new Date().toISOString()
   };
 
-  const editId = document.getElementById('pf-id').value;
   let error;
   if (editId) {
     ({ error } = await sb.from('products').update(payload).eq('id', editId));

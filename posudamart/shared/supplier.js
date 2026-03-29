@@ -34,7 +34,7 @@ function saveTheme(themeKey) {
 }
 
 function renderThemePicker(containerId) {
-  const current = localStorage.getItem("sup_theme") || "blue";
+  const current = localStorage.getItem("sup_theme") || "white";
   const grid = document.getElementById(containerId);
   if (!grid) return;
   grid.innerHTML = Object.entries(APP_THEMES).map(([key, t]) => `
@@ -64,8 +64,8 @@ function pickTheme(key) {
 
 // Применяем сохранённую тему сразу при загрузке
 (function() {
-  const saved = localStorage.getItem("sup_theme");
-  if (saved && APP_THEMES[saved]) applyTheme(saved);
+  const saved = localStorage.getItem("sup_theme") || "white";
+  if (APP_THEMES[saved]) applyTheme(saved);
 })();
 
 

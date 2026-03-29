@@ -20,7 +20,7 @@
     .product-sup{font-size:11px;color:var(--muted)}
     .product-price{font-size:14px;font-weight:800;color:var(--accent);font-family:var(--mono);margin-top:6px}
     .product-units{font-size:11px;color:var(--muted);font-family:var(--mono)}
-    .cart-bar{position:fixed;bottom:0;left:0;right:0;z-index:300;background:rgba(10,13,20,0.97);backdrop-filter:blur(20px);border-top:1px solid var(--accent);padding:12px 20px;display:none;align-items:center;justify-content:space-between;gap:12px}
+    .cart-bar{position:fixed;bottom:0;left:0;right:0;z-index:300;background:rgba(255,255,255,0.96);backdrop-filter:blur(20px);border-top:1px solid var(--accent);padding:12px 20px;display:none;align-items:center;justify-content:space-between;gap:12px}
     .cart-bar.visible{display:flex}
     .sup-section{margin-bottom:28px}
     .sup-header{display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border)}
@@ -53,7 +53,10 @@
 <main class="container">
   <div class="page-head">
     <h1>Каталог товаров</h1>
-    <input type="text" id="search" placeholder="Поиск по названию..." style="width:220px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <input type="text" id="search" placeholder="Поиск: название или артикул..." style="width:220px">
+      <select id="filter-category" style="width:200px"><option value="">Все категории</option></select>
+    </div>
   </div>
   <div id="catalog-wrap"><div class="empty"><div class="empty-icon">🛍</div>Загрузка...</div></div>
 </main>
@@ -122,6 +125,10 @@
     <div id="cart-items-wrap"></div>
     <div style="margin-top:16px">
       <div class="field">
+        <label>Адрес доставки *</label>
+        <textarea id="delivery-address" placeholder="Укажите точный адрес доставки" style="min-height:58px" required></textarea>
+      </div>
+      <div class="field">
         <label>Комментарий к заказу</label>
         <textarea id="order-comment" placeholder="Пожелания, уточнения..."></textarea>
       </div>
@@ -144,7 +151,7 @@
 
 <script src="../shared/client.js"></script>
 <script>
-let allProducts=[], allSuppliers=[], cart={}, currentProduct=null;
+let allProducts=[], allSuppliers=[], allCategories=[], cart={}, currentProduct=null;
 function mountSafeImages(root){
   root.querySelectorAll('[data-safe-image]').forEach(host=>{
     const safeUrl=sanitizeImageUrl(host.dataset.safeImage||'');
@@ -163,14 +170,19 @@ function mountSafeImages(root){
     const profile = await authGuard();
     if(!profile) return;
 
-    const [pRes, sRes] = await Promise.all([
+    const [pRes, sRes, cRes] = await Promise.all([
       sb.from('products').select('*').order('name'),
-      sb.from('suppliers').select('id,name,logo,address').eq('status','active').order('name')
+      sb.from('suppliers').select('id,name,logo,address').eq('status','active').order('name'),
+      sb.from('categories').select('id,name').order('name')
     ]);
     allProducts = getSupabaseDataOrThrow(pRes, 'Каталог товаров');
     allSuppliers = getSupabaseDataOrThrow(sRes, 'Список поставщиков');
+    allCategories = getSupabaseDataOrThrow(cRes, 'Категории');
+    const catSel = document.getElementById('filter-category');
+    allCategories.forEach(c => catSel.innerHTML += `<option value="${c.id}">${esc(c.name)}</option>`);
     renderCatalog();
     document.getElementById('search').addEventListener('input', renderCatalog);
+    document.getElementById('filter-category').addEventListener('input', renderCatalog);
   } catch (err) {
     console.error('clt-catalog init failed', err);
     showFatalLoadError(err?.message || 'Не удалось загрузить каталог.', () => window.location.reload());
@@ -179,8 +191,10 @@ function mountSafeImages(root){
 
 function renderCatalog(){
   const term = document.getElementById('search').value.toLowerCase();
+  const categoryId = document.getElementById('filter-category').value;
   const filtered = allProducts.filter(p=>
-    !term || p.name?.toLowerCase().includes(term) || p.sku?.toLowerCase().includes(term)
+    (!term || p.name?.toLowerCase().includes(term) || p.sku?.toLowerCase().includes(term)) &&
+    (!categoryId || p.category_id===categoryId)
   );
   const wrap = document.getElementById('catalog-wrap');
   if(!filtered.length){
@@ -332,6 +346,11 @@ function removeFromCart(id){
 async function placeOrder(){
   const items=Object.values(cart);
   if(!items.length) return;
+  const deliveryAddress = (document.getElementById('delivery-address').value || '').trim();
+  if (!deliveryAddress) {
+    showToast('Укажите адрес доставки', false);
+    return;
+  }
   const btn=document.getElementById('btn-checkout');
   btn.disabled=true; btn.textContent='Отправляем...';
 
@@ -373,6 +392,7 @@ async function placeOrder(){
       items: orderItems,
       status: 'Новый',
       client_comment: comment,
+      delivery_address: deliveryAddress,
       supplier_comment: '',
       updated_by: 'client',
       created_at: new Date().toISOString(),
@@ -399,6 +419,7 @@ async function placeOrder(){
   updateCartBar();
   renderCatalog();
   document.getElementById('order-comment').value='';
+  document.getElementById('delivery-address').value='';
   showToast('✅ Заказ отправлен поставщику!');
   setTimeout(()=>location.href='clt-orders.html', 1500);
 }

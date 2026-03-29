@@ -38,33 +38,31 @@
     <h1>Заказы</h1>
   </div>
 
-  <!-- Tab switcher -->
-  <div style="display:flex;gap:4px;background:var(--surface);border-radius:10px;padding:4px;margin-bottom:20px;width:fit-content">
-    <button id="tab-admin" onclick="switchTab('admin')" style="padding:8px 18px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font)">📋 От Posudamart</button>
-    <button id="tab-client" onclick="switchTab('client')" style="padding:8px 18px;border-radius:8px;border:none;background:transparent;color:var(--muted);font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font)" id="tab-client">🛒 От клиентов</button>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+    <input id="order-search" type="text" placeholder="Поиск: № заказа, клиент, артикул..." style="width:280px">
+    <select id="order-status-filter" style="width:200px">
+      <option value="">Все статусы</option>
+      <option value="Новый">Новый</option>
+      <option value="Изменён">Изменён</option>
+      <option value="Подтверждён">Подтверждён</option>
+      <option value="Отменён">Отменён</option>
+      <option value="Оформлен">Оформлен</option>
+      <option value="Черновик">Черновик</option>
+      <option value="Закрыт">Закрыт</option>
+    </select>
   </div>
 
-  <!-- Admin orders (from Posudamart) -->
-  <div id="section-admin">
-    <div class="panel">
-      <div class="panel-title">Входящие заказы от Posudamart</div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Номер</th><th>Дата</th><th>Статус</th><th>Позиций</th><th>Сумма</th><th>Комментарий</th>
-          </tr></thead>
-          <tbody id="orders-tbody">
-            <tr><td colspan="6" class="empty"><div class="empty-icon">📋</div>Загрузка...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- Client orders -->
-  <div id="section-client" style="display:none">
-    <div id="client-orders-container">
-      <div class="panel"><div class="empty"><div class="empty-icon">🛒</div>Загрузка...</div></div>
+  <div class="panel">
+    <div class="panel-title">Общий список заказов</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Номер</th><th>Дата</th><th>Статус</th><th>Клиент</th><th>Адрес</th><th>Позиций</th><th>Сумма</th>
+        </tr></thead>
+        <tbody id="orders-tbody">
+          <tr><td colspan="7" class="empty"><div class="empty-icon">📋</div>Загрузка...</td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </main>
@@ -107,7 +105,9 @@
 
 <script src="../shared/supplier.js"></script>
 <script>
-let orders = [], clientOrders = [], activeTab = 'admin';
+let orders = [], clientOrders = [];
+let pendingOpenOrder = new URLSearchParams(window.location.search).get('open_order');
+let pendingOpenSource = new URLSearchParams(window.location.search).get('source');
 function mountSafeImages(root){
   root.querySelectorAll('[data-safe-image]').forEach(host=>{
     const safe=sanitizeImageUrl(host.dataset.safeImage||'');
@@ -124,17 +124,6 @@ function mountSafeImages(root){
     host.textContent='';
     host.appendChild(img);
   });
-}
-
-function switchTab(tab) {
-  activeTab = tab;
-  const isAdmin = tab === 'admin';
-  document.getElementById('section-admin').style.display = isAdmin ? '' : 'none';
-  document.getElementById('section-client').style.display = isAdmin ? 'none' : '';
-  document.getElementById('tab-admin').style.background = isAdmin ? 'var(--accent)' : 'transparent';
-  document.getElementById('tab-admin').style.color = isAdmin ? '#fff' : 'var(--muted)';
-  document.getElementById('tab-client').style.background = isAdmin ? 'transparent' : 'var(--accent)';
-  document.getElementById('tab-client').style.color = isAdmin ? 'var(--muted)' : '#fff';
 }
 
 (async () => {
@@ -164,27 +153,47 @@ async function loadOrders() {
   const res = await sb.from('orders').select('*')
     .eq('supplier_id', currentSupplier.id).order('date', { ascending: false });
   orders = getSupabaseDataOrThrow(res, 'Заказы Posudamart');
-  render();
+  renderUnifiedOrders();
 }
 
-function render() {
+function renderUnifiedOrders() {
+  const term = (document.getElementById('order-search').value || '').toLowerCase().trim();
+  const statusFilter = document.getElementById('order-status-filter').value;
+  const combined = [
+    ...orders.map(o => ({ ...o, source: 'admin', clientName: 'Posudamart', deliveryAddress: o.delivery_address || '—', supplierName: currentSupplier.name })),
+    ...clientOrders.map(o => ({ ...o, source: 'client', clientName: (o.client_name || o.client_id?.slice(0,8) || 'Клиент'), deliveryAddress: o.delivery_address || '—', supplierName: currentSupplier.name })),
+  ].filter(o => {
+    const inItems = (o.items || []).some(i => (i.productName || '').toLowerCase().includes(term) || (i.sku || '').toLowerCase().includes(term));
+    const matchesTerm = !term || (String(o.number || '').toLowerCase().includes(term)) || (o.clientName || '').toLowerCase().includes(term) || inItems;
+    return matchesTerm && (!statusFilter || o.status === statusFilter);
+  }).sort((a, b) => new Date(b.created_at || b.date || 0) - new Date(a.created_at || a.date || 0));
+
   const tbody = document.getElementById('orders-tbody');
-  if (!orders.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty"><div class="empty-icon">📋</div>Заказов пока нет</td></tr>';
+  if (!combined.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty"><div class="empty-icon">📋</div>Заказы не найдены</td></tr>';
     return;
   }
-  tbody.innerHTML = orders.map(o => {
+  tbody.innerHTML = combined.map(o => {
     const items = o.items || [];
     const total = items.reduce((s, i) => s + Number(i.totalPrice||0), 0);
-    return `<tr style="cursor:pointer;transition:background .12s" onclick="openAdminOrderModal('${o.id}')" onmouseover="this.style.background='rgba(79,110,247,0.06)'" onmouseout="this.style.background=''">
+    return `<tr style="cursor:pointer;transition:background .12s" onclick="${o.source==='client' ? `openCltModal('${o.id}')` : `openAdminOrderModal('${o.id}')`}" onmouseover="this.style.background='rgba(79,110,247,0.06)'" onmouseout="this.style.background=''">
       <td class="mono"><strong>#${esc(o.number)}</strong></td>
-      <td>${esc(o.date)}</td>
-      <td>${statusBadge(o.status)}</td>
+      <td>${esc((o.created_at || o.date || '').slice(0,10))}</td>
+      <td>${o.source==='client' ? cltStatusBadge(o.status) : statusBadge(o.status)}</td>
+      <td>${esc(o.clientName || '—')}</td>
+      <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(o.deliveryAddress || '—')}</td>
       <td style="text-align:center">${items.length}</td>
       <td class="mono">${fmtMoney(total)}</td>
-      <td style="color:var(--muted);font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(o.comment||'—')}</td>
     </tr>`;
   }).join('');
+  if (pendingOpenOrder) {
+    const openId = pendingOpenOrder;
+    const source = pendingOpenSource;
+    pendingOpenOrder = null;
+    pendingOpenSource = null;
+    if (source === 'client') openCltModal(openId);
+    else openAdminOrderModal(openId);
+  }
 }
 
 function openAdminOrderModal(id) {
@@ -196,7 +205,10 @@ function openAdminOrderModal(id) {
   document.getElementById('clt-modal-title').textContent = `Заказ Posudamart #${o.number}`;
   document.getElementById('clt-modal-status').innerHTML = statusBadge(o.status);
   document.getElementById('clt-modal-client-info').innerHTML = `
+    <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Клиент</span><div style="font-weight:700;margin-top:3px">Posudamart</div></div>
+    <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Поставщик</span><div style="font-weight:700;margin-top:3px">${esc(currentSupplier.name||'—')}</div></div>
     <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Дата</span><div style="font-weight:700;margin-top:3px">${esc(o.date)}</div></div>
+    <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Адрес доставки</span><div style="font-weight:600;margin-top:3px">${esc(o.delivery_address||'—')}</div></div>
     <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Позиций</span><div style="font-weight:700;margin-top:3px">${items.length}</div></div>
     <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Комментарий</span><div style="font-weight:600;margin-top:3px">${esc(o.comment||'—')}</div></div>
   `;
@@ -241,38 +253,9 @@ async function loadClientOrders() {
     .eq('supplier_id', currentSupplier.id)
     .order('created_at', { ascending: false });
   clientOrders = getSupabaseDataOrThrow(res, 'Заказы клиентов');
-  renderClientOrders();
-  // Show badge if new orders
-  const newCount = clientOrders.filter(o => o.status === 'Новый').length;
-  document.getElementById('tab-client').innerHTML =
-    `🛒 От клиентов${newCount>0?` <span style="display:inline-block;background:var(--danger);color:#fff;border-radius:99px;padding:1px 7px;font-size:10px;margin-left:4px">${newCount}</span>`:''}`;
+  renderUnifiedOrders();
 }
-
-function renderClientOrders() {
-  const container = document.getElementById('client-orders-container');
-  if (!clientOrders.length) {
-    container.innerHTML = '<div class="panel"><div class="empty"><div class="empty-icon">🛒</div>Заказов от клиентов пока нет</div></div>';
-    return;
-  }
-  container.innerHTML = clientOrders.map(o => {
-    const total = (o.items||[]).reduce((s,i)=>s+Number(i.totalPrice||0),0);
-    const isNew = o.status === 'Новый';
-    return `<div class="panel" style="margin-bottom:10px;cursor:pointer;transition:border-color .15s${isNew?';border-color:var(--accent)':''}" onclick="openCltModal('${o.id}')" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='${isNew?'var(--accent)':'var(--border)'}'">
-      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-        <div style="font-family:var(--mono);font-size:14px;font-weight:700">#${esc(o.number)}</div>
-        <div style="flex:1;min-width:0">
-          <div style="font-weight:600">${esc(o.client_id?.slice(0,8)||'Клиент')}</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(o.created_at?.slice(0,10)||'')} · ${(o.items||[]).length} позиций</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px">
-          ${cltStatusBadge(o.status)}
-          <span style="font-family:var(--mono);font-weight:700">${fmtMoney(total)}</span>
-        </div>
-      </div>
-      ${o.client_comment?`<div style="margin-top:8px;font-size:12px;color:var(--muted)">💬 ${esc(o.client_comment)}</div>`:''}
-    </div>`;
-  }).join('');
-}
+['order-search','order-status-filter'].forEach(id => document.getElementById(id).addEventListener('input', renderUnifiedOrders));
 
 function cltStatusBadge(s) {
   const map = {
@@ -300,7 +283,10 @@ function openCltModal(id) {
 
   // Client info (we just show partial id for now)
   document.getElementById('clt-modal-client-info').innerHTML = `
+    <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Клиент</span><div style="font-weight:700;margin-top:3px">${esc(o.client_name || o.client_id?.slice(0,8) || 'Клиент')}</div></div>
+    <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Поставщик</span><div style="font-weight:700;margin-top:3px">${esc(currentSupplier.name||'—')}</div></div>
     <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Дата заказа</span><div style="font-weight:700;margin-top:3px">${esc(o.created_at?.slice(0,10)||'')}</div></div>
+    <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Адрес доставки</span><div style="font-weight:600;margin-top:3px">${esc(o.delivery_address||'—')}</div></div>
     <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Позиций</span><div style="font-weight:700;margin-top:3px">${(o.items||[]).length}</div></div>
     <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Обновил</span><div style="font-weight:600;margin-top:3px">${o.updated_by==='supplier'?'Вы':'Клиент'}</div></div>
   `;
@@ -418,7 +404,7 @@ async function sendChangesToClient(id) {
   o.status = 'Изменён';
   o.supplier_comment = supComment;
   closeCltModal();
-  renderClientOrders();
+  renderUnifiedOrders();
   showToast('✅ Изменения отправлены клиенту');
 }
 
