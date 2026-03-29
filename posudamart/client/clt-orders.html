@@ -206,7 +206,11 @@ function render(){
 
 function openModal(id){
   const o=orders.find(x=>x.id===id);
-  if(!o) return;
+  if(!o){
+    console.error('Client order modal open failed: order not found', { id, totalLoaded: orders.length });
+    showToast('Не удалось открыть заказ. Обновите страницу.', false);
+    return;
+  }
   currentOrderId=id;
   const sup=getSup(o.supplier_id);
   const total=(o.items||[]).reduce((s,i)=>s+Number(i.totalPrice||0),0);
@@ -302,7 +306,10 @@ async function confirmOrder(id){
     updated_by:'client',
     updated_at:new Date().toISOString()
   }).eq('id',id);
-  if(error) return showToast(error.message,false);
+  if(error){
+    console.error('confirmOrder failed', { id, message: error.message });
+    return showToast(error.message,false);
+  }
   o.status='Подтверждён';
   o.client_comment=comment;
   closeModal();
@@ -318,7 +325,10 @@ async function cancelOrder(id){
     updated_by:'client',
     updated_at:new Date().toISOString()
   }).eq('id',id);
-  if(error) return showToast(error.message,false);
+  if(error){
+    console.error('cancelOrder failed', { id, message: error.message });
+    return showToast(error.message,false);
+  }
   const o=orders.find(x=>x.id===id);
   if(o) o.status='Отменён';
   closeModal(); render();

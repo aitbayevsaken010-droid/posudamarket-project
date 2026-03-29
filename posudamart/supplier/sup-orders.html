@@ -11,6 +11,11 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../shared/supplier.css">
+  <style>
+    .clickable-order-row{cursor:pointer;transition:background .12s}
+    .clickable-order-row:hover{background:rgba(79,110,247,0.06)}
+    .order-cell-address{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  </style>
 </head>
 <body>
 <div id="auth-loading"><div class="spinner"></div></div>
@@ -68,7 +73,7 @@
 </main>
 
 <!-- Client order modal -->
-<div class="modal-backdrop" id="clt-order-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:500;display:none;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px)">
+<div class="modal-backdrop" id="clt-order-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:500;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px)">
   <div style="background:var(--surface);border:1px solid var(--border2);border-radius:16px;padding:24px;width:100%;max-width:620px;max-height:90vh;overflow-y:auto">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
       <div>
@@ -114,12 +119,16 @@ function mountSafeImages(root){
     if(!safe) return;
     const img=document.createElement('img');
     img.src=safe;
-    img.style.width='36px';
-    img.style.height='36px';
-    img.style.borderRadius='6px';
+    const size=Math.max(24, Number(host.dataset.size||36));
+    img.style.width=`${size}px`;
+    img.style.height=`${size}px`;
+    img.style.maxWidth='100%';
+    img.style.borderRadius=host.dataset.radius||'6px';
     img.style.objectFit='cover';
     img.style.border='1px solid var(--border)';
     img.style.flexShrink='0';
+    img.style.display='block';
+    img.onerror=()=>{ host.innerHTML='<span style="font-size:15px">📦</span>'; };
     if(host.dataset.alt) img.alt=host.dataset.alt;
     host.textContent='';
     host.appendChild(img);
@@ -176,16 +185,19 @@ function renderUnifiedOrders() {
   tbody.innerHTML = combined.map(o => {
     const items = o.items || [];
     const total = items.reduce((s, i) => s + Number(i.totalPrice||0), 0);
-    return `<tr style="cursor:pointer;transition:background .12s" onclick="${o.source==='client' ? `openCltModal('${o.id}')` : `openAdminOrderModal('${o.id}')`}" onmouseover="this.style.background='rgba(79,110,247,0.06)'" onmouseout="this.style.background=''">
+    return `<tr class="clickable-order-row" data-order-id="${esc(o.id)}" data-order-source="${o.source}">
       <td class="mono"><strong>#${esc(o.number)}</strong></td>
       <td>${esc((o.created_at || o.date || '').slice(0,10))}</td>
       <td>${o.source==='client' ? cltStatusBadge(o.status) : statusBadge(o.status)}</td>
       <td>${esc(o.clientName || '—')}</td>
-      <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(o.deliveryAddress || '—')}</td>
+      <td class="order-cell-address">${esc(o.deliveryAddress || '—')}</td>
       <td style="text-align:center">${items.length}</td>
       <td class="mono">${fmtMoney(total)}</td>
     </tr>`;
   }).join('');
+  tbody.querySelectorAll('tr[data-order-id]').forEach(row=>{
+    row.addEventListener('click', ()=>openOrderFromUnifiedList(row.dataset.orderId, row.dataset.orderSource));
+  });
   if (pendingOpenOrder) {
     const openId = pendingOpenOrder;
     const source = pendingOpenSource;
@@ -196,9 +208,18 @@ function renderUnifiedOrders() {
   }
 }
 
+function openOrderFromUnifiedList(orderId, source){
+  if (source === 'client') return openCltModal(orderId);
+  return openAdminOrderModal(orderId);
+}
+
 function openAdminOrderModal(id) {
   const o = orders.find(x => x.id === id);
-  if (!o) return;
+  if (!o) {
+    console.error('Supplier could not open Posudamart order details', { id, knownOrders: orders.length });
+    showToast('Не удалось открыть заказ. Обновите страницу.', false);
+    return;
+  }
   const total = (o.items||[]).reduce((s,i)=>s+Number(i.totalPrice||0),0);
   const items = o.items || [];
 
@@ -272,10 +293,14 @@ let currentCltOrderId = null;
 
 function openCltModal(id) {
   const o = clientOrders.find(x => x.id === id);
-  if (!o) return;
+  if (!o) {
+    console.error('Supplier could not open client order details', { id, knownOrders: clientOrders.length });
+    showToast('Не удалось открыть заказ клиента. Обновите страницу.', false);
+    return;
+  }
   currentCltOrderId = id;
   const total = (o.items||[]).reduce((s,i)=>s+Number(i.totalPrice||0),0);
-  const canEdit = o.status === 'Новый';
+  const canEdit = o.status === 'Новый' || (o.status === 'Изменён' && o.updated_by !== 'supplier');
 
   document.getElementById('clt-modal-title').textContent = `Заказ клиента #${o.number}`;
   document.getElementById('clt-modal-status').innerHTML = cltStatusBadge(o.status);
@@ -289,6 +314,7 @@ function openCltModal(id) {
     <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Адрес доставки</span><div style="font-weight:600;margin-top:3px">${esc(o.delivery_address||'—')}</div></div>
     <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Позиций</span><div style="font-weight:700;margin-top:3px">${(o.items||[]).length}</div></div>
     <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Обновил</span><div style="font-weight:600;margin-top:3px">${o.updated_by==='supplier'?'Вы':'Клиент'}</div></div>
+    <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Комментарий поставщика</span><div style="font-weight:600;margin-top:3px">${esc(o.supplier_comment||'—')}</div></div>
   `;
 
   // Items — editable if status is Новый
@@ -399,7 +425,10 @@ async function sendChangesToClient(id) {
     updated_by: 'supplier',
     updated_at: new Date().toISOString()
   }).eq('id', id);
-  if (error) return showToast(error.message, false);
+  if (error) {
+    console.error('sendChangesToClient failed', { id, message: error.message });
+    return showToast(error.message, false);
+  }
   o.items = updatedItems;
   o.status = 'Изменён';
   o.supplier_comment = supComment;
