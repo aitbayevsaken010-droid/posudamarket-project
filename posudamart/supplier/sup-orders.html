@@ -15,6 +15,13 @@
     .clickable-order-row{cursor:pointer;transition:background .12s}
     .clickable-order-row:hover{background:rgba(79,110,247,0.06)}
     .order-cell-address{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    #clt-order-modal{display:none}
+    #clt-order-modal.open{display:flex}
+    #clt-order-modal .modal-shell{width:100%;max-width:620px;max-height:90vh;overflow-y:auto;overflow-x:hidden}
+    @media (max-width:640px){
+      #clt-order-modal{padding:10px}
+      #clt-order-modal .modal-shell{max-height:94vh;padding:16px}
+    }
   </style>
 </head>
 <body>
@@ -74,7 +81,7 @@
 
 <!-- Client order modal -->
 <div class="modal-backdrop" id="clt-order-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:500;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px)">
-  <div style="background:var(--surface);border:1px solid var(--border2);border-radius:16px;padding:24px;width:100%;max-width:620px;max-height:90vh;overflow-y:auto">
+  <div class="modal-shell" style="background:var(--surface);border:1px solid var(--border2);border-radius:16px;padding:24px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
       <div>
         <div style="font-size:16px;font-weight:800" id="clt-modal-title">Заказ</div>
@@ -111,6 +118,8 @@
 <script src="../shared/supplier.js"></script>
 <script>
 let orders = [], clientOrders = [];
+let ordersLoaded = false;
+let clientOrdersLoaded = false;
 let pendingOpenOrder = new URLSearchParams(window.location.search).get('open_order');
 let pendingOpenSource = new URLSearchParams(window.location.search).get('source');
 function mountSafeImages(root){
@@ -161,7 +170,8 @@ function mountSafeImages(root){
 async function loadOrders() {
   const res = await sb.from('orders').select('*')
     .eq('supplier_id', currentSupplier.id).order('date', { ascending: false });
-  orders = getSupabaseDataOrThrow(res, 'Заказы Posudamart');
+  orders = getSupabaseDataOrThrow(res, 'Заказы Posudamart').map(normalizeOrderRecord);
+  ordersLoaded = true;
   renderUnifiedOrders();
 }
 
@@ -184,7 +194,7 @@ function renderUnifiedOrders() {
   }
   tbody.innerHTML = combined.map(o => {
     const items = o.items || [];
-    const total = items.reduce((s, i) => s + Number(i.totalPrice||0), 0);
+    const total = calcOrderTotal(items);
     return `<tr class="clickable-order-row" data-order-id="${esc(o.id)}" data-order-source="${o.source}">
       <td class="mono"><strong>#${esc(o.number)}</strong></td>
       <td>${esc((o.created_at || o.date || '').slice(0,10))}</td>
@@ -198,29 +208,90 @@ function renderUnifiedOrders() {
   tbody.querySelectorAll('tr[data-order-id]').forEach(row=>{
     row.addEventListener('click', ()=>openOrderFromUnifiedList(row.dataset.orderId, row.dataset.orderSource));
   });
-  if (pendingOpenOrder) {
+  if (pendingOpenOrder && ordersLoaded && clientOrdersLoaded) {
     const openId = pendingOpenOrder;
     const source = pendingOpenSource;
     pendingOpenOrder = null;
     pendingOpenSource = null;
-    if (source === 'client') openCltModal(openId);
-    else openAdminOrderModal(openId);
+    openOrderFromUnifiedList(openId, source);
   }
 }
 
-function openOrderFromUnifiedList(orderId, source){
-  if (source === 'client') return openCltModal(orderId);
-  return openAdminOrderModal(orderId);
+async function openOrderFromUnifiedList(orderId, source){
+  const resolvedSource = source || detectOrderSource(orderId);
+  if (resolvedSource === 'client') return openCltModal(orderId);
+  if (resolvedSource === 'admin') return openAdminOrderModal(orderId);
+  const hydrated = await hydrateOrderById(orderId);
+  if (hydrated?.source === 'client') return openCltModal(orderId);
+  if (hydrated?.source === 'admin') return openAdminOrderModal(orderId);
+  console.error('Supplier order source detection failed', { orderId, source, resolvedSource });
+  showToast('Не удалось определить источник заказа. Обновите страницу.', false);
 }
 
-function openAdminOrderModal(id) {
-  const o = orders.find(x => x.id === id);
+function detectOrderSource(orderId){
+  if (clientOrders.some(x => x.id === orderId)) return 'client';
+  if (orders.some(x => x.id === orderId)) return 'admin';
+  return '';
+}
+
+async function hydrateOrderById(orderId){
+  const [clientRes, adminRes] = await Promise.all([
+    sb.from('client_orders').select('*').eq('id', orderId).eq('supplier_id', currentSupplier.id).maybeSingle(),
+    sb.from('orders').select('*').eq('id', orderId).eq('supplier_id', currentSupplier.id).maybeSingle(),
+  ]);
+  if (clientRes?.data) {
+    const hydrated = normalizeOrderRecord(clientRes.data);
+    clientOrders = [hydrated, ...clientOrders.filter(x => x.id !== orderId)];
+    renderUnifiedOrders();
+    return { source: 'client', order: hydrated };
+  }
+  if (adminRes?.data) {
+    const hydrated = normalizeOrderRecord(adminRes.data);
+    orders = [hydrated, ...orders.filter(x => x.id !== orderId)];
+    renderUnifiedOrders();
+    return { source: 'admin', order: hydrated };
+  }
+  return null;
+}
+
+function calcOrderTotal(items){
+  return (items || []).reduce((s, i) => s + Number(i.totalPrice || 0), 0);
+}
+
+function normalizeOrderRecord(order){
+  return { ...order, items: (order?.items || []).map(normalizeOrderItem) };
+}
+
+function normalizeOrderItem(item){
+  const unitsPerBox = Number(item.unitsPerBox ?? item.units_per_box ?? 1) || 1;
+  const boxes = Number(item.boxes ?? item.qty ?? 0) || 0;
+  const boxPrice = Number(item.boxPrice ?? item.box_price ?? 0) || 0;
+  const totalPrice = Number(item.totalPrice ?? item.total_price ?? (boxes * boxPrice)) || 0;
+  return {
+    ...item,
+    productName: item.productName ?? item.product_name ?? item.name ?? '—',
+    sku: item.sku ?? item.article ?? '',
+    photo: item.photo ?? item.image ?? '',
+    boxes,
+    unitsPerBox,
+    boxPrice,
+    totalUnits: Number(item.totalUnits ?? item.total_units ?? (boxes * unitsPerBox)) || 0,
+    totalPrice,
+  };
+}
+
+async function openAdminOrderModal(id) {
+  let o = orders.find(x => x.id === id);
+  if (!o) {
+    const hydrated = await hydrateOrderById(id);
+    o = hydrated?.source === 'admin' ? hydrated.order : null;
+  }
   if (!o) {
     console.error('Supplier could not open Posudamart order details', { id, knownOrders: orders.length });
     showToast('Не удалось открыть заказ. Обновите страницу.', false);
     return;
   }
-  const total = (o.items||[]).reduce((s,i)=>s+Number(i.totalPrice||0),0);
+  const total = calcOrderTotal(o.items);
   const items = o.items || [];
 
   document.getElementById('clt-modal-title').textContent = `Заказ Posudamart #${o.number}`;
@@ -273,7 +344,8 @@ async function loadClientOrders() {
   const res = await sb.from('client_orders').select('*')
     .eq('supplier_id', currentSupplier.id)
     .order('created_at', { ascending: false });
-  clientOrders = getSupabaseDataOrThrow(res, 'Заказы клиентов');
+  clientOrders = getSupabaseDataOrThrow(res, 'Заказы клиентов').map(normalizeOrderRecord);
+  clientOrdersLoaded = true;
   renderUnifiedOrders();
 }
 ['order-search','order-status-filter'].forEach(id => document.getElementById(id).addEventListener('input', renderUnifiedOrders));
@@ -291,15 +363,19 @@ function cltStatusBadge(s) {
 // ── Client order modal ──
 let currentCltOrderId = null;
 
-function openCltModal(id) {
-  const o = clientOrders.find(x => x.id === id);
+async function openCltModal(id) {
+  let o = clientOrders.find(x => x.id === id);
+  if (!o) {
+    const hydrated = await hydrateOrderById(id);
+    o = hydrated?.source === 'client' ? hydrated.order : null;
+  }
   if (!o) {
     console.error('Supplier could not open client order details', { id, knownOrders: clientOrders.length });
     showToast('Не удалось открыть заказ клиента. Обновите страницу.', false);
     return;
   }
   currentCltOrderId = id;
-  const total = (o.items||[]).reduce((s,i)=>s+Number(i.totalPrice||0),0);
+  const total = calcOrderTotal(o.items);
   const canEdit = o.status === 'Новый' || (o.status === 'Изменён' && o.updated_by !== 'supplier');
 
   document.getElementById('clt-modal-title').textContent = `Заказ клиента #${o.number}`;
