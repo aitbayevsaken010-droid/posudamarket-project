@@ -99,12 +99,17 @@ function mountSafeImages(root){
 }
 
 async function onAdminLoggedIn() {
-  const [o,s,p]=await Promise.all([
+  const [o,co,s,p]=await Promise.all([
     sb.from('orders').select('*').eq('archived',true).order('date',{ascending:false}),
+    sb.from('client_orders').select('*').in('status',['Отгружен','В истории']).order('updated_at',{ascending:false}),
     sb.from('suppliers').select('id,name,phone,whatsapp,address').order('name'),
     sb.from('products').select('id,name,sku,photo').order('name')
   ]);
-  orders=o.data||[]; suppliers=s.data||[]; products=p.data||[];
+  orders=[
+    ...(o.data||[]).map(x=>({...x,source:'admin'})),
+    ...(co.data||[]).map(x=>({...x,source:'client',date:(x.updated_at||x.created_at||'').slice(0,10)}))
+  ];
+  suppliers=s.data||[]; products=p.data||[];
   suppliers.forEach(s=>document.getElementById('filter-sup').innerHTML+=`<option value="${s.id}">${esc(s.name)}</option>`);
   render();
 }
@@ -218,7 +223,10 @@ function openHistModal(id) {
 
   document.getElementById('hist-modal-title').textContent = `Заказ #${o.number}`;
   document.getElementById('hist-modal-sup-info').innerHTML = `
+    ${o.source==='client' ? `<div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Тип</span><div style="font-weight:700;margin-top:3px">Клиентский заказ</div></div>` : ''}
     <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Поставщик</span><div style="font-weight:700;margin-top:3px">${esc(sup.name)}</div></div>
+    ${o.client_name?`<div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Клиент</span><div style="font-weight:600;margin-top:3px">${esc(o.client_name)}</div></div>`:''}
+    ${o.delivery_address?`<div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Адрес</span><div style="font-weight:600;margin-top:3px">${esc(o.delivery_address)}</div></div>`:''}
     ${sup.phone?`<div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Телефон</span><div style="font-weight:600;margin-top:3px">${esc(sup.phone)}</div></div>`:''}
     ${sup.whatsapp?`<div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">WhatsApp</span><div style="font-weight:600;margin-top:3px">${esc(sup.whatsapp)}</div></div>`:''}
     <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Дата</span><div style="font-weight:600;margin-top:3px">${esc(o.date)}</div></div>
@@ -264,6 +272,9 @@ function openHistModal(id) {
   mountSafeImages(document.getElementById('hist-modal-items'));
 
   document.getElementById('hist-modal-total').innerHTML = `Итого: <span style="color:var(--accent)">${fmtMoney(total)}</span>`;
+  if (o.receipt_image_url) {
+    document.getElementById('hist-modal-items').insertAdjacentHTML('beforeend', `<div style="margin-top:12px"><img src="${esc(o.receipt_image_url)}" alt="receipt" style="max-width:100%;border-radius:8px;border:1px solid var(--border)"></div>`);
+  }
   document.getElementById('hist-modal-pdf').onclick = () => { closeHistModal(); printOrderById(o.id); };
   document.getElementById('hist-order-modal').classList.add('open');
 }

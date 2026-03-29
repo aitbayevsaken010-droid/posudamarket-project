@@ -48,12 +48,11 @@
       <input id="search" type="text" placeholder="Поиск..." style="width:160px">
       <select id="filter-status" style="width:180px">
         <option value="">Все статусы</option>
-        <option value="Черновик">Черновик</option>
         <option value="Новый">Новый</option>
-        <option value="Изменён">Изменён поставщиком</option>
-        <option value="Подтверждён">Подтверждён</option>
-        <option value="Принят">Принят поставщиком</option>
-        <option value="Завершён">Завершён</option>
+        <option value="Скорректирован">Скорректирован поставщиком</option>
+        <option value="В работе">В работе</option>
+        <option value="Отгружен">Отгружен</option>
+        <option value="В истории">В истории</option>
         <option value="Отменён">Отменён</option>
       </select>
     </div>
@@ -64,7 +63,7 @@
     <span style="font-size:22px">⚠️</span>
     <div>
       <div style="font-weight:700;color:var(--warning)" id="changed-banner-text"></div>
-      <div style="font-size:12px;color:var(--muted);margin-top:2px">Поставщик изменил количество или цену. Проверьте и подтвердите.</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px">Поставщик скорректировал количество. Проверьте и подтвердите.</div>
     </div>
   </div>
 
@@ -157,7 +156,7 @@ function mountSafeImages(root){
     render();
 
   // Changed orders banner
-  const changed=orders.filter(o=>o.status==='Изменён');
+  const changed=orders.filter(o=>o.status==='Скорректирован');
   if(changed.length>0){
     const b=document.getElementById('changed-banner');
     b.style.display='flex';
@@ -202,7 +201,7 @@ function render(){
   container.innerHTML=filtered.map(o=>{
     const sup=getSup(o.supplier_id);
     const total=(o.items||[]).reduce((s,i)=>s+Number(i.totalPrice||0),0);
-    const isChanged=o.status==='Изменён';
+    const isChanged=o.status==='Скорректирован';
     return`<div class="panel" style="margin-bottom:10px;cursor:pointer;transition:border-color .15s${isChanged?';border-color:var(--warning)':''}" onclick="openModal('${o.id}')" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='${isChanged?'var(--warning)':'var(--border)'}'">
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
         <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text)">#${esc(o.number)}</div>
@@ -230,8 +229,8 @@ function openModal(id){
   currentOrderId=id;
   const sup=getSup(o.supplier_id);
   const total=(o.items||[]).reduce((s,i)=>s+Number(i.totalPrice||0),0);
-  const isChanged=o.status==='Изменён';
-  const isActive=['Черновик','Новый','Изменён'].includes(o.status);
+  const isChanged=o.status==='Скорректирован';
+  const isActive=['Новый','Скорректирован'].includes(o.status);
 
   document.getElementById('modal-title').textContent=`Заказ #${o.number}`;
   document.getElementById('modal-status-line').innerHTML=statusBadge(o.status);
@@ -293,11 +292,20 @@ function openModal(id){
   replyWrap.style.display=isActive?'block':'none';
   if(isActive) document.getElementById('modal-client-comment').value=o.client_comment||'';
 
+  if (o.receipt_image_url) {
+    document.getElementById('modal-items-wrap').insertAdjacentHTML('beforeend', `
+      <div style="margin-top:14px;padding:12px;border:1px solid var(--border);border-radius:10px">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Подтверждение отгрузки</div>
+        <img src="${esc(o.receipt_image_url)}" alt="receipt" style="max-width:100%;border-radius:8px;border:1px solid var(--border)">
+      </div>
+    `);
+  }
+
   document.getElementById('modal-total').textContent=fmtMoney(total);
 
   // Actions
   let actions='';
-  if(o.status==='Подтверждён'){
+  if(['В работе','Отгружен','В истории'].includes(o.status)){
     actions+=`<button class="btn btn-sm" style="background:rgba(245,158,11,0.12);border-color:var(--warning);color:var(--warning)" onclick="closeModal();generateInvoice('${o.id}')">🖨 Накладная</button>`;
   }
   if(isActive){
@@ -317,7 +325,7 @@ async function confirmOrder(id){
   if(!o||!confirm('Подтвердить заказ?')) return;
   const comment=document.getElementById('modal-client-comment').value.trim();
   const{error}=await sb.from('client_orders').update({
-    status:'Подтверждён',
+    status:'В работе',
     client_comment:comment,
     updated_by:'client',
     updated_at:new Date().toISOString()
@@ -326,7 +334,7 @@ async function confirmOrder(id){
     console.error('confirmOrder failed', { id, message: error.message });
     return showToast(error.message,false);
   }
-  o.status='Подтверждён';
+  o.status='В работе';
   o.client_comment=comment;
   closeModal();
   render();
