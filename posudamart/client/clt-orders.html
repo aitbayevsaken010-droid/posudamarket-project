@@ -11,6 +11,14 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../shared/client.css">
+  <style>
+    #order-modal .modal{overflow-x:hidden}
+    @media (max-width:640px){
+      #order-modal .modal{max-height:94vh;padding:16px}
+      #order-modal #modal-actions{width:100%}
+      #order-modal #modal-actions .btn{flex:1;justify-content:center}
+    }
+  </style>
 </head>
 <body>
 <div id="auth-loading"><div class="spinner"></div></div>
@@ -120,6 +128,8 @@ function mountSafeImages(root){
     img.src=safe;
     img.style.width='36px';
     img.style.height='36px';
+    img.style.maxWidth='100%';
+    img.style.maxHeight='100%';
     img.style.borderRadius='6px';
     img.style.objectFit='cover';
     img.style.border='1px solid var(--border)';
@@ -235,7 +245,7 @@ function openModal(id){
 
   // Items table
   const items=o.items||[];
-  document.getElementById('modal-items-wrap').innerHTML=`
+  document.getElementById('modal-items-wrap').innerHTML=items.length?`
     <div style="overflow-x:auto;border-radius:10px;border:1px solid var(--border)">
       <table style="width:100%;border-collapse:collapse;min-width:440px">
         <thead><tr style="background:var(--surface2)">
@@ -260,7 +270,7 @@ function openModal(id){
           </tr>`;
         }).join('')}</tbody>
       </table>
-    </div>`;
+    </div>`:'<div class="empty"><div class="empty-icon">📦</div>В заказе нет товаров</div>';
   mountSafeImages(document.getElementById('modal-items-wrap'));
 
   // Supplier comment
