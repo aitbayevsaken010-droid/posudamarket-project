@@ -137,9 +137,12 @@ function showToast(msg,ok=true){
 }
 
 function statusBadge(s){
+  if(s==='Черновик')       return`<span class="badge badge-draft">Черновик</span>`;
   if(s==='Новый')          return`<span class="badge badge-new">Новый</span>`;
   if(s==='Изменён')        return`<span class="badge badge-changed">⚠ Изменён поставщиком</span>`;
   if(s==='Подтверждён')    return`<span class="badge badge-confirmed">✓ Подтверждён</span>`;
+  if(s==='Принят')         return`<span class="badge badge-confirmed">Принят</span>`;
+  if(s==='Завершён')       return`<span class="badge badge-confirmed">Завершён</span>`;
   if(s==='Отменён')        return`<span class="badge badge-cancelled">Отменён</span>`;
   return`<span class="badge badge-new">${esc(s)}</span>`;
 }

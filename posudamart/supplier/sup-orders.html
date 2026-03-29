@@ -57,6 +57,8 @@
       <option value="Новый">Новый</option>
       <option value="Изменён">Изменён</option>
       <option value="Подтверждён">Подтверждён</option>
+      <option value="Принят">Принят</option>
+      <option value="Завершён">Завершён</option>
       <option value="Отменён">Отменён</option>
       <option value="Оформлен">Оформлен</option>
       <option value="Черновик">Черновик</option>
@@ -122,6 +124,16 @@ let ordersLoaded = false;
 let clientOrdersLoaded = false;
 let pendingOpenOrder = new URLSearchParams(window.location.search).get('open_order');
 let pendingOpenSource = new URLSearchParams(window.location.search).get('source');
+const CLT_STATUS = {
+  DRAFT: 'Черновик',
+  NEW: 'Новый',
+  CHANGED: 'Изменён',
+  CONFIRMED: 'Подтверждён',
+  ACCEPTED: 'Принят',
+  COMPLETED: 'Завершён',
+  CANCELLED: 'Отменён'
+};
+const clientIdentityById = new Map();
 function mountSafeImages(root){
   root.querySelectorAll('[data-safe-image]').forEach(host=>{
     const safe=sanitizeImageUrl(host.dataset.safeImage||'');
@@ -180,7 +192,7 @@ function renderUnifiedOrders() {
   const statusFilter = document.getElementById('order-status-filter').value;
   const combined = [
     ...orders.map(o => ({ ...o, source: 'admin', clientName: 'Posudamart', deliveryAddress: o.delivery_address || '—', supplierName: currentSupplier.name })),
-    ...clientOrders.map(o => ({ ...o, source: 'client', clientName: (o.client_name || o.client_id?.slice(0,8) || 'Клиент'), deliveryAddress: o.delivery_address || '—', supplierName: currentSupplier.name })),
+    ...clientOrders.map(o => ({ ...o, source: 'client', clientName: resolveClientDisplayName(o), deliveryAddress: o.delivery_address || '—', supplierName: currentSupplier.name })),
   ].filter(o => {
     const inItems = (o.items || []).some(i => (i.productName || '').toLowerCase().includes(term) || (i.sku || '').toLowerCase().includes(term));
     const matchesTerm = !term || (String(o.number || '').toLowerCase().includes(term)) || (o.clientName || '').toLowerCase().includes(term) || inItems;
@@ -234,6 +246,31 @@ function detectOrderSource(orderId){
   return '';
 }
 
+function resolveClientDisplayName(order){
+  const fromOrder = [order?.client_name, order?.client_full_name, order?.client_email].find(Boolean);
+  if (fromOrder) return fromOrder;
+  const profile = clientIdentityById.get(order?.client_id);
+  return profile?.full_name || profile?.email || 'Клиент';
+}
+
+async function hydrateClientIdentity(ordersList){
+  const ids = [...new Set((ordersList||[]).map(o=>o.client_id).filter(Boolean))];
+  if (!ids.length) return;
+  const missing = ids.filter(id => !clientIdentityById.has(id));
+  if (!missing.length) return;
+  const { data, error } = await sb.from('profiles').select('id,full_name,email').in('id', missing);
+  if (error) {
+    console.error('Failed to load client identities', error);
+    return;
+  }
+  (data||[]).forEach(row => clientIdentityById.set(row.id, row));
+}
+
+function canSupplierEditClientOrder(order){
+  return [CLT_STATUS.DRAFT, CLT_STATUS.NEW, CLT_STATUS.CHANGED].includes(order?.status);
+}
+
+
 async function hydrateOrderById(orderId){
   const [clientRes, adminRes] = await Promise.all([
     sb.from('client_orders').select('*').eq('id', orderId).eq('supplier_id', currentSupplier.id).maybeSingle(),
@@ -241,6 +278,7 @@ async function hydrateOrderById(orderId){
   ]);
   if (clientRes?.data) {
     const hydrated = normalizeOrderRecord(clientRes.data);
+    await hydrateClientIdentity([hydrated]);
     clientOrders = [hydrated, ...clientOrders.filter(x => x.id !== orderId)];
     renderUnifiedOrders();
     return { source: 'client', order: hydrated };
@@ -345,6 +383,7 @@ async function loadClientOrders() {
     .eq('supplier_id', currentSupplier.id)
     .order('created_at', { ascending: false });
   clientOrders = getSupabaseDataOrThrow(res, 'Заказы клиентов').map(normalizeOrderRecord);
+  await hydrateClientIdentity(clientOrders);
   clientOrdersLoaded = true;
   renderUnifiedOrders();
 }
@@ -352,12 +391,15 @@ async function loadClientOrders() {
 
 function cltStatusBadge(s) {
   const map = {
-    'Новый':       'background:rgba(79,110,247,.12);color:var(--accent);border:1px solid rgba(79,110,247,.25)',
-    'Изменён':     'background:rgba(245,158,11,.12);color:var(--warning);border:1px solid rgba(245,158,11,.25)',
-    'Подтверждён': 'background:rgba(34,197,94,.12);color:var(--success);border:1px solid rgba(34,197,94,.25)',
-    'Отменён':     'background:rgba(239,68,68,.12);color:var(--danger);border:1px solid rgba(239,68,68,.25)',
+    [CLT_STATUS.DRAFT]:     'background:rgba(148,163,184,.15);color:var(--muted);border:1px solid rgba(148,163,184,.3)',
+    [CLT_STATUS.NEW]:       'background:rgba(79,110,247,.12);color:var(--accent);border:1px solid rgba(79,110,247,.25)',
+    [CLT_STATUS.CHANGED]:   'background:rgba(245,158,11,.12);color:var(--warning);border:1px solid rgba(245,158,11,.25)',
+    [CLT_STATUS.CONFIRMED]: 'background:rgba(34,197,94,.12);color:var(--success);border:1px solid rgba(34,197,94,.25)',
+    [CLT_STATUS.ACCEPTED]:  'background:rgba(20,184,166,.14);color:#0f766e;border:1px solid rgba(20,184,166,.35)',
+    [CLT_STATUS.COMPLETED]: 'background:rgba(22,163,74,.14);color:#166534;border:1px solid rgba(22,163,74,.32)',
+    [CLT_STATUS.CANCELLED]: 'background:rgba(239,68,68,.12);color:var(--danger);border:1px solid rgba(239,68,68,.25)',
   };
-  return `<span style="display:inline-flex;align-items:center;padding:3px 9px;border-radius:99px;font-size:11px;font-weight:700;${map[s]||''}">${esc(s)}</span>`;
+  return `<span style="display:inline-flex;align-items:center;padding:3px 9px;border-radius:99px;font-size:11px;font-weight:700;${map[s]||map[CLT_STATUS.DRAFT]}">${esc(s || CLT_STATUS.DRAFT)}</span>`;
 }
 
 // ── Client order modal ──
@@ -376,15 +418,15 @@ async function openCltModal(id) {
   }
   currentCltOrderId = id;
   const total = calcOrderTotal(o.items);
-  const canEdit = o.status === 'Новый' || (o.status === 'Изменён' && o.updated_by !== 'supplier');
+  const canEdit = canSupplierEditClientOrder(o);
 
   document.getElementById('clt-modal-title').textContent = `Заказ клиента #${o.number}`;
   document.getElementById('clt-modal-status').innerHTML = cltStatusBadge(o.status);
   document.getElementById('clt-modal-total').textContent = fmtMoney(total);
 
-  // Client info (we just show partial id for now)
+  // Client info
   document.getElementById('clt-modal-client-info').innerHTML = `
-    <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Клиент</span><div style="font-weight:700;margin-top:3px">${esc(o.client_name || o.client_id?.slice(0,8) || 'Клиент')}</div></div>
+    <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Клиент</span><div style="font-weight:700;margin-top:3px">${esc(resolveClientDisplayName(o))}</div></div>
     <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Поставщик</span><div style="font-weight:700;margin-top:3px">${esc(currentSupplier.name||'—')}</div></div>
     <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Дата заказа</span><div style="font-weight:700;margin-top:3px">${esc(o.created_at?.slice(0,10)||'')}</div></div>
     <div><span style="color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Адрес доставки</span><div style="font-weight:600;margin-top:3px">${esc(o.delivery_address||'—')}</div></div>
@@ -445,13 +487,18 @@ async function openCltModal(id) {
   // Actions
   let actions = '';
   if (canEdit) {
-    actions += `<button class="btn btn-sm btn-primary" onclick="sendChangesToClient('${id}')">📤 Отправить изменения</button>`;
+    actions += `<button class="btn btn-sm btn-primary" onclick="sendChangesToClient('${id}')">📤 Отправить клиенту</button>`;
   }
-  if (o.status === 'Подтверждён') {
-    actions += `<span style="font-size:13px;color:var(--success);font-weight:700">✅ Клиент подтвердил</span>`;
+  if (o.status === CLT_STATUS.CONFIRMED) {
+    actions += `<button class="btn btn-sm" style="background:var(--success-soft);border-color:var(--success);color:var(--success)" onclick="markSupplierAccepted('${id}')">✅ Принять заказ</button>`;
+  }
+  if (o.status === CLT_STATUS.ACCEPTED) {
+    actions += `<button class="btn btn-sm" style="background:var(--success-soft);border-color:var(--success);color:var(--success)" onclick="markSupplierCompleted('${id}')">🏁 Завершить</button>`;
+  }
+  if ([CLT_STATUS.CONFIRMED, CLT_STATUS.ACCEPTED, CLT_STATUS.COMPLETED].includes(o.status)) {
     actions += `<button class="btn btn-sm" style="background:rgba(245,158,11,0.12);border-color:var(--warning);color:var(--warning)" onclick="closeCltModal();generateSupInvoice('${id}')">🖨 Накладная</button>`;
   }
-  if (o.status === 'Отменён') {
+  if (o.status === CLT_STATUS.CANCELLED) {
     actions += `<span style="font-size:13px;color:var(--danger);font-weight:700">✕ Отменён клиентом</span>`;
   }
   document.getElementById('clt-modal-actions').innerHTML = actions;
@@ -496,7 +543,7 @@ async function sendChangesToClient(id) {
   const supComment = document.getElementById('clt-sup-comment').value.trim();
   const { error } = await sb.from('client_orders').update({
     items: updatedItems,
-    status: 'Изменён',
+    status: CLT_STATUS.CHANGED,
     supplier_comment: supComment,
     updated_by: 'supplier',
     updated_at: new Date().toISOString()
@@ -506,11 +553,38 @@ async function sendChangesToClient(id) {
     return showToast(error.message, false);
   }
   o.items = updatedItems;
-  o.status = 'Изменён';
+  o.status = CLT_STATUS.CHANGED;
   o.supplier_comment = supComment;
   closeCltModal();
   renderUnifiedOrders();
   showToast('✅ Изменения отправлены клиенту');
+}
+
+async function updateClientOrderStatus(id, status){
+  const { error } = await sb.from('client_orders').update({
+    status,
+    updated_by: 'supplier',
+    updated_at: new Date().toISOString()
+  }).eq('id', id);
+  if (error) {
+    showToast(error.message, false);
+    return false;
+  }
+  const order = clientOrders.find(x => x.id === id);
+  if (order) order.status = status;
+  renderUnifiedOrders();
+  openCltModal(id);
+  return true;
+}
+
+async function markSupplierAccepted(id){
+  if (!confirm('Подтвердить, что заказ принят в работу?')) return;
+  if (await updateClientOrderStatus(id, CLT_STATUS.ACCEPTED)) showToast('✅ Заказ принят в работу');
+}
+
+async function markSupplierCompleted(id){
+  if (!confirm('Отметить заказ как завершённый?')) return;
+  if (await updateClientOrderStatus(id, CLT_STATUS.COMPLETED)) showToast('🏁 Заказ завершён');
 }
 
 // ── Накладная для поставщика ──
