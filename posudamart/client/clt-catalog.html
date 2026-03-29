@@ -315,6 +315,13 @@ function updateCartBar(){
   const total=items.reduce((s,i)=>s+i.totalPrice,0);
   document.getElementById('cart-total').textContent=fmtMoney(total);
 }
+
+function recalcCartTotals(){
+  const total=Object.values(cart).reduce((sum,item)=>sum+Number(item.totalPrice||0),0);
+  document.getElementById('cart-total-modal').textContent=fmtMoney(total);
+  updateCartBar();
+}
+
 function openCart(){
   const items=Object.values(cart);
   if(!items.length) return;
@@ -340,8 +347,14 @@ function openCart(){
                 </div>
               </div>
             </td>
-            <td style="padding:10px 12px;text-align:center;font-weight:700">${item.qty}</td>
-            <td style="padding:10px 12px;text-align:right;font-family:var(--mono);font-weight:700">${fmtMoney(item.totalPrice)}</td>
+            <td style="padding:10px 12px;text-align:center">
+              <div style="display:flex;align-items:center;justify-content:center;gap:4px">
+                <button onclick="changeCartQty('${item.product.id}',-1)" style="width:24px;height:24px;border-radius:5px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px">−</button>
+                <input type="number" id="cart-qty-${item.product.id}" value="${item.qty}" min="1" step="1" style="width:52px;text-align:center;background:var(--bg);border:1px solid var(--border2);border-radius:5px;color:var(--text);padding:3px 5px;font-size:13px;font-weight:700" oninput="setCartQty('${item.product.id}', this.value)">
+                <button onclick="changeCartQty('${item.product.id}',1)" style="width:24px;height:24px;border-radius:5px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px">+</button>
+              </div>
+            </td>
+            <td id="cart-row-total-${item.product.id}" style="padding:10px 12px;text-align:right;font-family:var(--mono);font-weight:700">${fmtMoney(item.totalPrice)}</td>
             <td style="padding:10px 4px;text-align:center">
               <button onclick="removeFromCart('${item.product.id}')" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:16px">✕</button>
             </td>
@@ -352,6 +365,25 @@ function openCart(){
   mountSafeImages(document.getElementById('cart-items-wrap'));
   document.getElementById('cart-modal').classList.add('open');
 }
+function changeCartQty(id, delta){
+  const current = Number(cart[id]?.qty || 1);
+  setCartQty(id, current + delta);
+}
+
+function setCartQty(id, rawValue){
+  const item = cart[id];
+  if(!item) return;
+  const qty = Math.max(1, Number.parseInt(rawValue, 10) || 1);
+  item.qty = qty;
+  item.totalPrice = qty * Number(item.product.box_price || 0);
+  const inp = document.getElementById(`cart-qty-${id}`);
+  if (inp) inp.value = qty;
+  const rowTotal = document.getElementById(`cart-row-total-${id}`);
+  if (rowTotal) rowTotal.textContent = fmtMoney(item.totalPrice);
+  recalcCartTotals();
+  renderCatalog();
+}
+
 function closeCart(){document.getElementById('cart-modal').classList.remove('open')}
 function removeFromCart(id){
   delete cart[id];
@@ -381,8 +413,14 @@ async function placeOrder(){
   });
 
   // Get order number counter
-  const {data:setting}=await sb.from('app_settings').select('value').eq('key','next_order_number').single();
-  let nextNum=Number(setting?.value||1);
+  const settingRes = await sb.from('app_settings').select('value').eq('key','next_order_number').maybeSingle();
+  if (settingRes.error) {
+    console.error('placeOrder counter fetch failed', settingRes.error);
+    btn.disabled=false; btn.textContent='✓ Отправить заказ';
+    showToast('Не удалось получить номер заказа. Повторите попытку.', false);
+    return;
+  }
+  let nextNum=Number(settingRes.data?.value||1);
 
   const comment=document.getElementById('order-comment').value.trim();
   const errors=[];
@@ -402,10 +440,12 @@ async function placeOrder(){
       totalPrice: item.totalPrice
     }));
 
-    const {error}=await sb.from('client_orders').insert({
+    const payload = {
       id: uid(),
       number: numStr,
       client_id: currentClient.id,
+      client_name: currentClient.full_name || null,
+      client_email: currentUser?.email || null,
       supplier_id: supId,
       items: orderItems,
       status: 'Новый',
@@ -415,14 +455,23 @@ async function placeOrder(){
       updated_by: 'client',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
-    });
+    };
 
-    if(!error){
-      await sb.from('app_settings').update({value:String(nextNum+1)}).eq('key','next_order_number');
+    let insertResult = await sb.from('client_orders').insert(payload);
+    if (insertResult.error && /column .*client_name|client_email/i.test(insertResult.error.message||'')) {
+      const { client_name, client_email, ...legacyPayload } = payload;
+      insertResult = await sb.from('client_orders').insert(legacyPayload);
+    }
+
+    if(!insertResult.error){
+      const counterUpdate = await sb.from('app_settings').update({value:String(nextNum+1)}).eq('key','next_order_number');
+      if (counterUpdate.error) {
+        console.error('placeOrder counter update failed', counterUpdate.error);
+      }
       nextNum++;
     } else {
-      console.error('placeOrder insert failed', { supplierId: supId, message: error.message });
-      errors.push(error.message);
+      console.error('placeOrder insert failed', { supplierId: supId, message: insertResult.error.message });
+      errors.push(insertResult.error.message);
     }
   }
 

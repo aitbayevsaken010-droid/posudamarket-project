@@ -48,9 +48,12 @@
       <input id="search" type="text" placeholder="Поиск..." style="width:160px">
       <select id="filter-status" style="width:180px">
         <option value="">Все статусы</option>
+        <option value="Черновик">Черновик</option>
         <option value="Новый">Новый</option>
         <option value="Изменён">Изменён поставщиком</option>
         <option value="Подтверждён">Подтверждён</option>
+        <option value="Принят">Принят поставщиком</option>
+        <option value="Завершён">Завершён</option>
         <option value="Отменён">Отменён</option>
       </select>
     </div>
@@ -185,7 +188,10 @@ function render(){
   const term=document.getElementById('search').value.toLowerCase();
   const fSt=document.getElementById('filter-status').value;
   const filtered=orders.filter(o=>{
-    const ok=!term||(o.number||'').toLowerCase().includes(term);
+    const supplierName=(getSup(o.supplier_id).name||'').toLowerCase();
+    const delivery=(o.delivery_address||'').toLowerCase();
+    const itemHit=(o.items||[]).some(i=>`${i.productName||''} ${i.sku||''}`.toLowerCase().includes(term));
+    const ok=!term||(o.number||'').toLowerCase().includes(term)||supplierName.includes(term)||delivery.includes(term)||itemHit;
     return ok&&(!fSt||o.status===fSt);
   });
   const container=document.getElementById('orders-container');
@@ -225,7 +231,7 @@ function openModal(id){
   const sup=getSup(o.supplier_id);
   const total=(o.items||[]).reduce((s,i)=>s+Number(i.totalPrice||0),0);
   const isChanged=o.status==='Изменён';
-  const isActive=o.status==='Новый'||o.status==='Изменён';
+  const isActive=['Черновик','Новый','Изменён'].includes(o.status);
 
   document.getElementById('modal-title').textContent=`Заказ #${o.number}`;
   document.getElementById('modal-status-line').innerHTML=statusBadge(o.status);
