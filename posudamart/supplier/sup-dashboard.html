@@ -126,7 +126,7 @@
       ...clientOrders.map(o => ({...o, source: 'client', orderDate: o.created_at || o.date || ''}))
     ].sort((a,b)=>new Date(b.orderDate||0)-new Date(a.orderDate||0));
 
-    const active = unifiedOrders.filter(o => !['Закрыт', 'Отменён', 'Подтверждён'].includes(o.status));
+    const active = unifiedOrders.filter(o => !['Закрыт', 'Отменён', 'В истории'].includes(o.status));
     const total = unifiedOrders.reduce((s, o) => s + (o.items || []).reduce((ss, i) => ss + Number(i.totalPrice || 0), 0), 0);
 
     document.getElementById('stat-products').textContent = products.length;
@@ -166,7 +166,7 @@
       const orders2 = getSupabaseDataOrThrow(ordersRes2, 'Заказы поставщика (real-time)');
       const clientOrders2 = getSupabaseDataOrThrow(clientOrdersRes2, 'Заказы клиентов (real-time)');
       const unified2 = [...orders2.map(o=>({...o,source:'admin',orderDate:o.date||o.created_at||''})), ...clientOrders2.map(o=>({...o,source:'client',orderDate:o.created_at||o.date||''}))].sort((a,b)=>new Date(b.orderDate||0)-new Date(a.orderDate||0));
-      const active2 = unified2.filter(o => !['Закрыт', 'Отменён', 'Подтверждён'].includes(o.status));
+      const active2 = unified2.filter(o => !['Закрыт', 'Отменён', 'В истории'].includes(o.status));
       const total2 = unified2.reduce((s, o) => s + (o.items || []).reduce((ss, i) => ss + Number(i.totalPrice || 0), 0), 0);
       document.getElementById('stat-products').textContent = prods2.length;
       document.getElementById('stat-orders').textContent = active2.length;

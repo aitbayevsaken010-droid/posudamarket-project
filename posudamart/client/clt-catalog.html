@@ -434,6 +434,7 @@ async function placeOrder(){
       sku: item.product.sku||'',
       photo: item.product.photo||'',
       boxes: item.qty,
+      requestedBoxes: item.qty,
       unitsPerBox: Number(item.product.units_per_box||1),
       totalUnits: item.qty*(item.product.units_per_box||1),
       boxPrice: Number(item.product.box_price),
@@ -452,14 +453,16 @@ async function placeOrder(){
       client_comment: comment,
       delivery_address: deliveryAddress,
       supplier_comment: '',
+      receipt_image_url: '',
+      receipt_uploaded_at: null,
       updated_by: 'client',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
 
     let insertResult = await sb.from('client_orders').insert(payload);
-    if (insertResult.error && /column .*client_name|client_email/i.test(insertResult.error.message||'')) {
-      const { client_name, client_email, ...legacyPayload } = payload;
+    if (insertResult.error && /column .*client_name|client_email|delivery_address|supplier_comment|updated_by|receipt_image_url|receipt_uploaded_at/i.test(insertResult.error.message||'')) {
+      const { client_name, client_email, delivery_address, supplier_comment, updated_by, receipt_image_url, receipt_uploaded_at, ...legacyPayload } = payload;
       insertResult = await sb.from('client_orders').insert(legacyPayload);
     }
 

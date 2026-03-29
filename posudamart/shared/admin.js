@@ -61,6 +61,12 @@ function sanitizeImageUrl(url){
 function statusBadge(s){
   if(s==='Оформлен')return`<span class="badge badge-done">Оформлен</span>`;
   if(s==='Закрыт')return`<span class="badge badge-closed">Закрыт</span>`;
+  if(s==='Новый')return`<span class="badge badge-draft">Новый</span>`;
+  if(s==='Скорректирован')return`<span class="badge badge-done">Скорректирован</span>`;
+  if(s==='В работе')return`<span class="badge badge-done">В работе</span>`;
+  if(s==='Отгружен')return`<span class="badge badge-done">Отгружен</span>`;
+  if(s==='В истории')return`<span class="badge badge-done">В истории</span>`;
+  if(s==='Отменён')return`<span class="badge badge-closed">Отменён</span>`;
   return`<span class="badge badge-draft">Черновик</span>`;
 }
 

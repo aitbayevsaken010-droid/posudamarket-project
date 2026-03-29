@@ -50,6 +50,10 @@
         <option value="">Все статусы</option>
         <option value="Черновик">Черновик</option>
         <option value="Оформлен">Оформлен</option>
+        <option value="Новый">Новый</option>
+        <option value="Скорректирован">Скорректирован</option>
+        <option value="В работе">В работе</option>
+        <option value="Отгружен">Отгружен</option>
       </select>
     </div>
   </div>
@@ -75,7 +79,7 @@
 <script src="../shared/admin.js"></script>
 <script>
 
-let orders=[], suppliers=[], products=[];
+let orders=[], suppliers=[], products=[], clientOrders=[];
 function mountSafeImages(root){
   root.querySelectorAll('[data-safe-image]').forEach(host=>{
     const safe=sanitizeImageUrl(host.dataset.safeImage||'');
@@ -95,17 +99,25 @@ function mountSafeImages(root){
 }
 
 async function onAdminLoggedIn() {
-  const [o,s,p]=await Promise.all([
+  const [o,co,s,p]=await Promise.all([
     sb.from('orders').select('*').eq('archived',false).order('date',{ascending:false}),
+    sb.from('client_orders').select('*').neq('status','В истории').neq('status','Отменён').order('created_at',{ascending:false}),
     sb.from('suppliers').select('id,name,phone,whatsapp,address').order('name'),
     sb.from('products').select('id,name,sku,photo').order('name')
   ]);
-  orders=o.data||[]; suppliers=s.data||[]; products=p.data||[];
+  orders=(o.data||[]).map(x=>({...x,source:'admin'}));
+  clientOrders=(co.data||[]).map(x=>({...x,source:'client',date:(x.created_at||'').slice(0,10)}));
+  orders=[...orders,...clientOrders];
+  suppliers=s.data||[]; products=p.data||[];
   suppliers.forEach(s=>document.getElementById('filter-sup').innerHTML+=`<option value="${s.id}">${esc(s.name)}</option>`);
   render();
   sb.channel('rt-o').on('postgres_changes',{event:'*',schema:'public',table:'orders'},async()=>{
-    const{data}=await sb.from('orders').select('*').eq('archived',false).order('date',{ascending:false});
-    orders=data||[]; render();
+    const [o2,co2]=await Promise.all([
+      sb.from('orders').select('*').eq('archived',false).order('date',{ascending:false}),
+      sb.from('client_orders').select('*').neq('status','В истории').neq('status','Отменён').order('created_at',{ascending:false})
+    ]);
+    orders=[...(o2.data||[]).map(x=>({...x,source:'admin'})),...(co2.data||[]).map(x=>({...x,source:'client',date:(x.created_at||'').slice(0,10)}))];
+    render();
   }).subscribe();
 }
 
@@ -279,7 +291,9 @@ function openOrderModal(id) {
   document.getElementById('modal-total').innerHTML = `Итого: <span id="modal-total-sum" style="color:var(--accent)">${fmtMoney(total)}</span>`;
 
   // Action buttons
-  document.getElementById('modal-actions').innerHTML = `
+  document.getElementById('modal-actions').innerHTML = o.source==='client' ? `
+    <span style="font-size:12px;color:var(--muted)">Заказ клиента — редактирование выполняется в клиентском процессе.</span>
+  ` : `
     <button class="btn btn-sm" style="background:rgba(245,158,11,0.12);border-color:var(--warning);color:var(--warning)" onclick="closeOrderModal();printOrderById('${o.id}')">🖨 Накладная</button>
     <button class="btn btn-sm btn-primary" id="btn-save-order" onclick="saveOrderChanges('${o.id}')">💾 Сохранить</button>
     ${o.status==='Черновик'?`<button class="btn btn-sm" style="background:var(--success-soft);border-color:var(--success);color:var(--success)" onclick="closeOrderModal();markOrdered('${o.id}')">✓ Оформить</button>`:''}
@@ -322,7 +336,7 @@ function recalcRow(orderId, idx) {
 // Сохранение изменений коробок
 async function saveOrderChanges(orderId) {
   const o = orders.find(x => x.id === orderId);
-  if (!o) return;
+  if (!o || o.source !== 'admin') return;
   const btn = document.getElementById('btn-save-order');
   btn.disabled = true; btn.textContent = '⏳ Сохраняем...';
   const updatedItems = (o.items||[]).map((item, idx) => {
@@ -351,6 +365,8 @@ document.getElementById('order-modal').addEventListener('click', function(e) {
 });
 
 async function closeOrder(id) {
+  const target = orders.find(x=>x.id===id);
+  if (target?.source !== 'admin') return;
   if(!confirm('Закрыть и переместить в историю?'))return;
   const { error } = await sb.from('orders').update({status:'Закрыт',archived:true}).eq('id',id);
   if (error) return showToast(error.message, false);
@@ -358,6 +374,8 @@ async function closeOrder(id) {
 }
 
 async function markOrdered(id) {
+  const target = orders.find(x=>x.id===id);
+  if (target?.source !== 'admin') return;
   if(!confirm('Пометить заказ как "Оформлен"?'))return;
   const { error } = await sb.from('orders').update({status:'Оформлен'}).eq('id',id);
   if (error) return showToast(error.message, false);
@@ -367,6 +385,8 @@ async function markOrdered(id) {
 }
 
 async function delOrder(id) {
+  const target = orders.find(x=>x.id===id);
+  if (target?.source !== 'admin') return;
   if(!confirm('Удалить заказ?'))return;
   await sb.from('orders').delete().eq('id',id);
   orders=orders.filter(x=>x.id!==id); render(); showToast('✓ Удалён');
