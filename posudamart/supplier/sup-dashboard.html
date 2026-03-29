@@ -113,32 +113,39 @@
     if (!supplier) return;
     document.getElementById('welcome-title').textContent = 'Привет, ' + supplier.name + '!';
 
-    const [productsRes, ordersRes] = await Promise.all([
+    const [productsRes, ordersRes, clientOrdersRes] = await Promise.all([
       sb.from('products').select('id').eq('supplier_id', supplier.id),
-      sb.from('orders').select('*').eq('supplier_id', supplier.id).order('date', { ascending: false })
+      sb.from('orders').select('*').eq('supplier_id', supplier.id).order('date', { ascending: false }),
+      sb.from('client_orders').select('*').eq('supplier_id', supplier.id).order('created_at', { ascending: false })
     ]);
     const products = getSupabaseDataOrThrow(productsRes, 'Товары поставщика');
     const orders = getSupabaseDataOrThrow(ordersRes, 'Заказы поставщика');
+    const clientOrders = getSupabaseDataOrThrow(clientOrdersRes, 'Заказы клиентов поставщику');
+    const unifiedOrders = [
+      ...orders.map(o => ({...o, source: 'admin', orderDate: o.date || o.created_at || ''})),
+      ...clientOrders.map(o => ({...o, source: 'client', orderDate: o.created_at || o.date || ''}))
+    ].sort((a,b)=>new Date(b.orderDate||0)-new Date(a.orderDate||0));
 
-    const active = orders.filter(o => o.status !== 'Закрыт');
-    const total = orders.reduce((s, o) => s + (o.items || []).reduce((ss, i) => ss + Number(i.totalPrice || 0), 0), 0);
+    const active = unifiedOrders.filter(o => !['Закрыт', 'Отменён', 'Подтверждён'].includes(o.status));
+    const total = unifiedOrders.reduce((s, o) => s + (o.items || []).reduce((ss, i) => ss + Number(i.totalPrice || 0), 0), 0);
 
     document.getElementById('stat-products').textContent = products.length;
   document.getElementById('stat-orders').textContent = active.length;
   document.getElementById('stat-total').textContent = fmtMoney(total);
 
-  const recent = (orders || []).slice(0, 5);
+  const recent = (unifiedOrders || []).slice(0, 5);
   if (recent.length) {
     document.getElementById('recent-orders').innerHTML = `
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Номер</th><th>Дата</th><th>Статус</th><th>Сумма</th></tr></thead>
+          <thead><tr><th>Номер</th><th>Источник</th><th>Дата</th><th>Статус</th><th>Сумма</th></tr></thead>
           <tbody>${recent.map(o => {
             const sum = (o.items||[]).reduce((s,i)=>s+Number(i.totalPrice||0),0);
-            return `<tr>
+            return `<tr style="cursor:pointer" onclick="location.href='sup-orders.html?source=${o.source}&open_order=${o.id}'">
               <td class="mono"><strong>#${esc(o.number)}</strong></td>
-              <td>${esc(o.date)}</td>
-              <td>${statusBadge(o.status)}</td>
+              <td>${o.source==='client'?'Клиент':'Posudamart'}</td>
+              <td>${esc((o.orderDate||'').slice(0,10))}</td>
+              <td>${o.source==='client'?`<span class="badge badge-draft">${esc(o.status)}</span>`:statusBadge(o.status)}</td>
               <td class="mono">${fmtMoney(sum)}</td>
             </tr>`;
           }).join('')}</tbody>
@@ -150,34 +157,42 @@
   sb.channel('rt-orders').on('postgres_changes',
     { event: '*', schema: 'public', table: 'orders', filter: `supplier_id=eq.${supplier.id}` },
     async () => {
-      const [prodsRes2, ordersRes2] = await Promise.all([
+      const [prodsRes2, ordersRes2, clientOrdersRes2] = await Promise.all([
         sb.from('products').select('id').eq('supplier_id', supplier.id),
-        sb.from('orders').select('*').eq('supplier_id', supplier.id).order('date', { ascending: false })
+        sb.from('orders').select('*').eq('supplier_id', supplier.id).order('date', { ascending: false }),
+        sb.from('client_orders').select('*').eq('supplier_id', supplier.id).order('created_at', { ascending: false })
       ]);
       const prods2 = getSupabaseDataOrThrow(prodsRes2, 'Товары поставщика (real-time)');
       const orders2 = getSupabaseDataOrThrow(ordersRes2, 'Заказы поставщика (real-time)');
-      const active2 = orders2.filter(o => o.status !== 'Закрыт');
-      const total2 = orders2.reduce((s, o) => s + (o.items || []).reduce((ss, i) => ss + Number(i.totalPrice || 0), 0), 0);
+      const clientOrders2 = getSupabaseDataOrThrow(clientOrdersRes2, 'Заказы клиентов (real-time)');
+      const unified2 = [...orders2.map(o=>({...o,source:'admin',orderDate:o.date||o.created_at||''})), ...clientOrders2.map(o=>({...o,source:'client',orderDate:o.created_at||o.date||''}))].sort((a,b)=>new Date(b.orderDate||0)-new Date(a.orderDate||0));
+      const active2 = unified2.filter(o => !['Закрыт', 'Отменён', 'Подтверждён'].includes(o.status));
+      const total2 = unified2.reduce((s, o) => s + (o.items || []).reduce((ss, i) => ss + Number(i.totalPrice || 0), 0), 0);
       document.getElementById('stat-products').textContent = prods2.length;
       document.getElementById('stat-orders').textContent = active2.length;
       document.getElementById('stat-total').textContent = fmtMoney(total2);
-      const recent2 = orders2.slice(0, 5);
+      const recent2 = unified2.slice(0, 5);
       if (recent2.length) {
         document.getElementById('recent-orders').innerHTML = `
           <div class="table-wrap"><table>
-            <thead><tr><th>Номер</th><th>Дата</th><th>Статус</th><th>Сумма</th></tr></thead>
+            <thead><tr><th>Номер</th><th>Источник</th><th>Дата</th><th>Статус</th><th>Сумма</th></tr></thead>
             <tbody>${recent2.map(o => {
               const sum = (o.items||[]).reduce((s,i)=>s+Number(i.totalPrice||0),0);
-              return `<tr>
+              return `<tr style="cursor:pointer" onclick="location.href='sup-orders.html?source=${o.source}&open_order=${o.id}'">
                 <td class="mono"><strong>#${esc(o.number)}</strong></td>
-                <td>${esc(o.date)}</td>
-                <td>${statusBadge(o.status)}</td>
+                <td>${o.source==='client'?'Клиент':'Posudamart'}</td>
+                <td>${esc((o.orderDate||'').slice(0,10))}</td>
+                <td>${o.source==='client'?`<span class="badge badge-draft">${esc(o.status)}</span>`:statusBadge(o.status)}</td>
                 <td class="mono">${fmtMoney(sum)}</td>
               </tr>`;
             }).join('')}</tbody>
           </table></div>`;
       }
     }
+  ).subscribe();
+  sb.channel('rt-client-orders-dashboard').on('postgres_changes',
+    { event: '*', schema: 'public', table: 'client_orders', filter: `supplier_id=eq.${supplier.id}` },
+    async () => window.location.reload()
   ).subscribe();
   } catch (err) {
     console.error('sup-dashboard init failed', err);

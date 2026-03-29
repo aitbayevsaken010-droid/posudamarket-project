@@ -17,7 +17,7 @@ const ADMIN_THEMES = {
 const APP_THEMES = ADMIN_THEMES;
 
 function applyTheme(themeKey) {
-  const t = APP_THEMES[themeKey] || APP_THEMES.blue;
+  const t = APP_THEMES[themeKey] || APP_THEMES.white;
   const r = document.documentElement;
   r.style.setProperty('--accent', t.accent);
   r.style.setProperty('--accent-glow', t.glow);
@@ -41,8 +41,8 @@ function saveTheme(themeKey) {
 
 // Apply saved theme immediately on every page load
 (function() {
-  const saved = localStorage.getItem('adm_theme');
-  if (saved && APP_THEMES[saved]) applyTheme(saved);
+  const saved = localStorage.getItem('adm_theme') || 'white';
+  if (APP_THEMES[saved]) applyTheme(saved);
 })();
 
 function fmtMoney(n){return Number(n||0).toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₸'}
