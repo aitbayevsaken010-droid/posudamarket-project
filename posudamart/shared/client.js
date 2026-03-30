@@ -1,4 +1,6 @@
 const sb = window.sb;
+const PM_ENUMS = window.PM_ENUMS;
+const PM_ACCESS = window.PM_ACCESS;
 
 // ══ THEME SYSTEM ══
 const APP_THEMES = {
@@ -155,18 +157,16 @@ function statusBadge(s){
 async function authGuard(){
   hasFatalLoadError = false;
   try {
-    const sessionRes = await sb.auth.getSession();
-    const session = getSupabaseDataOrThrow(sessionRes, 'Сессия пользователя').session;
-    if(!session){window.location.href='../index.html';return null}
+    const access = await PM_ACCESS.loadAccessContext(sb);
+    if(!access || !PM_ACCESS.hasRouteAccess(access, [PM_ENUMS.ROLES.CUSTOMER, PM_ENUMS.ROLES.CLIENT])){window.location.href='../index.html';return null}
 
-    const profileRes = await sb.from('profiles').select('*').eq('id',session.user.id).single();
+    const profileRes = await sb.from('profiles').select('*').eq('id',access.user.id).single();
     const profile = getSupabaseDataOrThrow(profileRes, 'Профиль пользователя');
-    if(profile.role!=='client'){window.location.href='../index.html';return null}
 
-    currentUser=session.user;
+    currentUser=access.user;
     currentClient=profile;
     const nameEl=document.getElementById('user-name');
-    if(nameEl) nameEl.textContent=profile.full_name||session.user.email;
+    if(nameEl) nameEl.textContent=profile.full_name||access.user.email;
     return profile;
   } catch (err) {
     console.error('authGuard(client) failed', err);

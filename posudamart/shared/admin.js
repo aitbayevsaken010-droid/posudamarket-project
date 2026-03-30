@@ -1,4 +1,6 @@
 const sb = window.sb;
+const PM_ENUMS = window.PM_ENUMS;
+const PM_ACCESS = window.PM_ACCESS;
 
 let currentAdminUser = null;
 
@@ -106,8 +108,8 @@ async function adminAuthGuard() {
     const { data: { session } } = await sb.auth.getSession();
     if (!session) { redirectToCommonLogin(); return null; }
 
-    const { data: profile } = await sb.from('profiles').select('role').eq('id', session.user.id).single();
-    if (!profile || profile.role !== 'admin') {
+    const access = await PM_ACCESS.loadAccessContext(sb);
+    if (!access || !PM_ACCESS.hasRouteAccess(access, [PM_ENUMS.ROLES.ADMIN])) {
       await sb.auth.signOut();
       localStorage.removeItem('adm_role');
       localStorage.removeItem('adm_id');

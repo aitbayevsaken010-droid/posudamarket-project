@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Оптовик — Профиль</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="../shared/runtime-config.js"></script>
+  <script src="../shared/supabase-client.js"></script>
+  <script src="../shared/domain/constants.js"></script>
+  <script src="../shared/domain/access-control.js"></script>
+</head>
+<body style="font-family:Arial,sans-serif;background:#0f1117;color:#fff;padding:24px">
+  <h1>Профиль оптовика</h1>
+  <p>Страница-заготовка для этапа foundation. Данные профиля и города будут расширены на следующем этапе.</p>
+  <p>Email: <span id="user-name">—</span></p>
+  <button onclick="wholesalerSignOut()">Выйти</button>
+  <script src="../shared/wholesaler.js"></script>
+  <script>
+    wholesalerAuthGuard();
+  </script>
+</body>
+</html>
