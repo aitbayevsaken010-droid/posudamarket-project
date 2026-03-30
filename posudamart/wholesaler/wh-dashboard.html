@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Оптовик — Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="../shared/runtime-config.js"></script>
+  <script src="../shared/supabase-client.js"></script>
+  <script src="../shared/domain/constants.js"></script>
+  <script src="../shared/domain/access-control.js"></script>
+  <style>body{font-family:Arial,sans-serif;background:#0f1117;color:#fff;margin:0;padding:24px} .card{background:#181c27;border:1px solid #2a3045;border-radius:12px;padding:16px;max-width:720px}</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Оптовик: архитектурный foundation</h1>
+    <p>Этот раздел добавлен как базовый каркас роли <b>wholesaler</b> для следующих этапов.</p>
+    <p>Пользователь: <span id="user-name">—</span></p>
+    <p>Следующие этапы добавят: каталог поставщиков, приемку, склад, продажи клиентам, модуль дозакупа.</p>
+    <button onclick="wholesalerSignOut()">Выйти</button>
+  </div>
+  <script src="../shared/wholesaler.js"></script>
+  <script>
+    wholesalerAuthGuard();
+  </script>
+</body>
+</html>

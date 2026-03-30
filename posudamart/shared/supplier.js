@@ -1,4 +1,6 @@
 const sb = window.sb;
+const PM_ENUMS = window.PM_ENUMS;
+const PM_ACCESS = window.PM_ACCESS;
 
 // ══ THEME SYSTEM ══
 const APP_THEMES = {
@@ -162,23 +164,19 @@ async function resizeImage(file,max=900){
 async function authGuard(){
   hasFatalLoadError = false;
   try {
-    const sessionRes = await sb.auth.getSession();
-    const session = getSupabaseDataOrThrow(sessionRes, 'Сессия пользователя').session;
-    if(!session){window.location.href='../index.html';return null}
+    const access = await PM_ACCESS.loadAccessContext(sb);
+    if(!access || !PM_ACCESS.hasRouteAccess(access, [PM_ENUMS.ROLES.SUPPLIER])){window.location.href='../index.html';return null}
+    if(!PM_ACCESS.canEnterBusinessSection(access)){window.location.href='../index.html';return null}
 
-    const profileRes = await sb.from('profiles').select('role').eq('id',session.user.id).single();
-    const profile = getSupabaseDataOrThrow(profileRes, 'Профиль пользователя');
-    if(profile.role!=='supplier'){window.location.href='../index.html';return null}
-
-    const supplierRes = await sb.from('suppliers').select('*').eq('user_id',session.user.id).single();
+    const supplierRes = await sb.from('suppliers').select('*').eq('user_id',access.user.id).single();
     const supplier = getSupabaseDataOrThrow(supplierRes, 'Профиль поставщика');
     if(supplier.status==='pending'){window.location.href='../index.html';return null}
     if(supplier.status==='rejected'){window.location.href='../index.html';return null}
 
-    currentUser=session.user;
+    currentUser=access.user;
     currentSupplier=supplier;
     const nameEl=document.getElementById('user-name');
-    if(nameEl){nameEl.textContent=session.user.email||supplier.name;nameEl.title=session.user.email||'';}
+    if(nameEl){nameEl.textContent=access.user.email||supplier.name;nameEl.title=access.user.email||'';}
     return supplier;
   } catch (err) {
     console.error('authGuard(supplier) failed', err);
