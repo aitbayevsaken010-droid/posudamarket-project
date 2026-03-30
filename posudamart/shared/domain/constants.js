@@ -25,6 +25,8 @@
   const CUSTOMER_ORDER_STATUSES = Object.freeze({
     NEW: 'new',
     CONFIRMED: 'confirmed',
+    PROCESSING: 'processing',
+    READY_FOR_PICKUP: 'ready_for_pickup',
     SHIPPED: 'shipped',
     CANCELLED: 'cancelled',
     COMPLETED: 'completed',

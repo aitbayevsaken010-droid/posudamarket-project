@@ -1,34 +1,42 @@
-# Architecture — Stage 3 Procurement Runtime
+# Architecture (Stage 1 → Stage 4)
 
-## What changed from Stage 1 + Stage 2
-- Stage 1 foundation entities are kept and extended (no second order architecture).
-- Stage 2 canonical catalog remains source of truth for product identity.
-- Stage 3 adds runtime procurement bridge: `supplier_products` → `supplier_orders` → receiving → `wholesaler_inventory_items` + `inventory_movements`.
+## Stage recap
+- **Stage 1**: marketplace foundation schema + core role model.
+- **Stage 2**: catalog runtime projection (`supplier_products` -> wholesaler/customer-facing catalog).
+- **Stage 3**: procurement runtime (`procurement cart -> supplier_orders -> receiving -> inventory bridge`).
+- **Stage 4 (current)**: customer operational runtime (`customer cart -> order -> reservation -> release/finalize -> replenishment demand`).
 
-## Runtime modules
-- `shared/domain/catalog.js`
-  - unchanged core canonical catalog + supplier offering behavior.
-- `shared/domain/procurement.js` (new)
-  - status labels/mappers,
-  - order normalization,
-  - cart submit RPC call,
-  - role page helper loaders for supplier/wholesaler views.
+## Stage 4 operational loop
+1. Customer browses **wholesaler inventory projection** (`wholesaler_inventory_items.available_qty > 0`).
+2. Customer adds unit quantities to DB cart (`customer_carts`, `customer_cart_items`).
+3. Checkout RPC `pm_checkout_customer_cart`:
+   - validates stock availability at checkout time,
+   - creates `customer_orders` + `customer_order_items`,
+   - writes reservation records (`stock_reservations`),
+   - writes `inventory_movements` with `reservation_hold`,
+   - decrements `available_qty`, increments `reserved_qty`.
+4. Order lifecycle managed by `pm_set_customer_order_status`:
+   - cancellation -> reservation release + movement `reservation_release`,
+   - completion -> sale finalization + movement `customer_sale`,
+   - `on_hand_qty` reduced only on completion.
+5. Completion writes replenishment demand runtime:
+   - persists event in `replenishment_demand_events`,
+   - updates active aggregate in `replenishment_demands` **by product/variant (not supplier)**,
+   - computes box suggestion by upward rounding.
 
-## Runtime flow (implemented)
-1. Wholesaler browses supplier catalog and builds procurement cart.
-2. Cart submit calls DB RPC `pm_submit_procurement_cart`.
-3. DB splits cart by supplier and creates one `supplier_orders` per supplier.
-4. Supplier adjusts or confirms quantities (`pm_supplier_adjust_order`).
-5. Wholesaler confirms/cancels changed order (`pm_wholesaler_confirm_order`).
-6. Supplier moves logistics statuses (`pm_supplier_set_logistics_status`).
-7. Wholesaler receives with damaged split (`pm_wholesaler_receive_order`).
-8. DB writes receiving records + inventory movements + updates stock.
+## Consistency rules
+- Single source of truth for availability = `wholesaler_inventory_items.available_qty`.
+- No second inventory subsystem introduced.
+- Reservation and sale are DB-runtime actions (no UI-only simulation).
+- Negative inventory prevented by checked update predicates in SQL runtime functions.
 
-## Persistence strategy
-- All procurement/receiving/inventory operations persist in Supabase Postgres.
-- No localStorage simulation for inventory updates.
-- Status history persisted in `supplier_order_status_history`.
+## UI/runtime scope in Stage 4
+- Customer: catalog add-to-cart, cart, checkout, order list, customer cancel (full-order only).
+- Wholesaler: incoming customer orders, allowed status transitions, active demand cards.
+- Admin: visibility into customer orders and active demand summary.
 
-## Deliberate Stage 3 limits
-- Attachment handling is metadata-only (`jsonb` with url/reference), not full media pipeline.
-- Reservation hold/release movement types are prepared in enum but reservation runtime remains next stage.
+## Not in Stage 4
+- Payment gateway/finance settlement.
+- Auto-procurement creation from demand.
+- Automatic demand close by supplier receiving coverage (foundation prepared for next stage).
+- Partial per-item cancellation.

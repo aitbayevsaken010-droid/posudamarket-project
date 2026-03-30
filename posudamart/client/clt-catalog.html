@@ -10,61 +10,156 @@
   <script src="../shared/domain/constants.js"></script>
   <script src="../shared/domain/access-control.js"></script>
   <script src="../shared/domain/catalog.js"></script>
+  <script src="../shared/domain/customer-orders.js"></script>
   <script src="../shared/client.js"></script>
   <link rel="stylesheet" href="../shared/client.css">
 </head>
 <body>
 <div id="auth-loading"><div class="spinner"></div></div>
-<header class="topbar"><a href="clt-dashboard.html" class="brand">Posudamart</a><nav class="nav"><a class="nav-btn active" href="clt-catalog.html">Каталог</a><a class="nav-btn" href="clt-orders.html">Заказы</a></nav></header>
+<div id="toast"></div>
+
+<header class="topbar">
+  <div class="brand-group">
+    <a href="clt-dashboard.html" class="brand"><div class="brand-dot"></div>Posudamart</a>
+    <span class="client-badge">🛒 Клиент</span>
+  </div>
+  <nav class="nav">
+    <a href="clt-dashboard.html" class="nav-btn">🏠 Главная</a>
+    <a href="clt-catalog.html" class="nav-btn active">🛍 Каталог</a>
+    <a href="clt-cart.html" class="nav-btn">🧺 Корзина <span id="cart-counter" class="badge badge-new" style="margin-left:6px">0</span></a>
+    <a href="clt-orders.html" class="nav-btn">📋 Заказы</a>
+    <a href="clt-profile.html" class="nav-btn">👤 Профиль</a>
+  </nav>
+  <div class="topbar-right">
+    <span class="user-name" id="user-name">—</span>
+    <button class="btn-logout" onclick="signOut()">Выйти</button>
+  </div>
+</header>
+
 <main class="container">
-  <h1>Каталог оптовика (по категориям)</h1>
-  <p style="color:var(--muted)">Клиент видит только ассортимент оптовика из фактически активных складских позиций.</p>
-  <div id="categories" class="panel">Загрузка...</div>
-  <div id="items" class="panel"></div>
+  <div class="page-head">
+    <h1>Каталог оптовика</h1>
+    <a href="clt-cart.html" class="btn btn-primary">Открыть корзину</a>
+  </div>
+  <div id="categories" class="panel" style="margin-bottom:12px">Загрузка категорий...</div>
+  <div id="items" class="panel">Выберите категорию.</div>
 </main>
+
 <script>
-let categories=[]; let catalog=[];
+let categories = [];
+let catalog = [];
+let customerProfile = null;
+
 (async()=>{
-  try{
-    const customer=await authGuard();
-    if(!customer) return;
-    await loadCatalog(customer);
-  }catch(err){console.error(err);}
+  try {
+    customerProfile = await authGuard();
+    if (!customerProfile) return;
+    await Promise.all([loadCatalog(), refreshCartCounter()]);
+    document.getElementById('auth-loading').style.display = 'none';
+  } catch (err) {
+    console.error(err);
+    showFatalLoadError(err?.message || 'Не удалось загрузить каталог.', () => window.location.reload());
+  }
 })();
 
-async function loadCatalog(customer){
+async function loadCatalog() {
   const [catRes, invRes] = await Promise.all([
     sb.from('catalog_categories').select('id,name').eq('is_active', true).order('name'),
-    sb.from('wholesaler_inventory_items').select(`id,wholesaler_id,available_qty,unit_sale_price,
-      catalog_products!inner(id,name,article,category_id,catalog_categories(name),catalog_product_images(image_url,sort_order))`)
-      .gt('available_qty',0)
-      .order('updated_at',{ascending:false})
+    sb.from('wholesaler_inventory_items').select(`
+      id, wholesaler_id, available_qty, unit_sale_price,
+      catalog_products!inner(id,name,article,category_id,catalog_categories(name),catalog_product_images(image_url,sort_order))
+    `)
+      .gt('available_qty', 0)
+      .order('updated_at', { ascending: false })
   ]);
-  if(catRes.error) throw catRes.error;
-  if(invRes.error) throw invRes.error;
-  categories=catRes.data||[];
-  catalog=PM_CATALOG.mapWholesalerRowsToCustomerCatalog((invRes.data||[]).map(r=>({
-    ...r,
-    category_id:r.catalog_products?.category_id,
-    category_name:r.catalog_products?.catalog_categories?.name,
-    product_id:r.catalog_products?.id,
-    article:r.catalog_products?.article,
-    product_name:r.catalog_products?.name,
-    image_url:r.catalog_products?.catalog_product_images?.[0]?.image_url
+
+  if (catRes.error) throw catRes.error;
+  if (invRes.error) throw invRes.error;
+
+  categories = catRes.data || [];
+  catalog = PM_CATALOG.mapWholesalerRowsToCustomerCatalog((invRes.data || []).map((row) => ({
+    ...row,
+    category_id: row.catalog_products?.category_id,
+    category_name: row.catalog_products?.catalog_categories?.name,
+    product_id: row.catalog_products?.id,
+    article: row.catalog_products?.article,
+    product_name: row.catalog_products?.name,
+    image_url: row.catalog_products?.catalog_product_images?.[0]?.image_url,
   })));
+
   renderCategories();
-  document.getElementById('auth-loading').style.display='none';
 }
 
-function renderCategories(){
-  const el=document.getElementById('categories');
-  el.innerHTML = categories.map(c=>`<button class="btn btn-ghost" onclick="openCategory('${c.id}')" style="margin:4px">${c.name}</button>`).join('') || 'Категории отсутствуют.';
+function renderCategories() {
+  const el = document.getElementById('categories');
+  if (!categories.length) {
+    el.innerHTML = '<div class="empty">Категории отсутствуют.</div>';
+    return;
+  }
+  el.innerHTML = categories
+    .map((category) => `<button class="btn btn-ghost" style="margin:4px" onclick="openCategory('${category.id}')">${esc(category.name)}</button>`)
+    .join('');
 }
-function openCategory(categoryId){
-  const items=catalog.filter(x=>x.categoryId===categoryId);
-  const el=document.getElementById('items');
-  if(!items.length){el.innerHTML='В этой категории пока нет доступного ассортимента.';return;}
-  el.innerHTML=items.map(i=>`<div style="padding:8px 0;border-bottom:1px solid var(--border)"><b>${i.name}</b> (${i.article||'—'})<br>${i.unitSalePrice.toFixed(2)} ₸/шт · Остаток: ${i.availableQty} шт</div>`).join('');
+
+function openCategory(categoryId) {
+  const items = catalog.filter((x) => x.categoryId === categoryId);
+  const el = document.getElementById('items');
+  if (!items.length) {
+    el.innerHTML = '<div class="empty">В этой категории нет доступных позиций.</div>';
+    return;
+  }
+
+  el.innerHTML = items.map((item) => {
+    const safeImage = sanitizeImageUrl(item.imageUrl || '');
+    return `
+      <div style="display:grid;grid-template-columns:48px 1fr auto;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+        <div>${safeImage ? `<img class="thumb" src="${safeImage}" alt="${esc(item.name)}">` : '<div class="thumb-ph">📦</div>'}</div>
+        <div>
+          <div style="font-weight:700">${esc(item.name)}</div>
+          <div style="color:var(--muted);font-size:12px">Артикул: ${esc(item.article || '—')}</div>
+          <div style="color:var(--muted);font-size:12px">Остаток: ${Number(item.availableQty || 0)} шт</div>
+          <div style="margin-top:2px;font-weight:700">${Number(item.unitSalePrice || 0).toFixed(2)} ₸ / шт</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="number" min="1" max="${Number(item.availableQty || 0)}" value="1" id="qty-${item.inventoryItemId}" style="width:78px">
+          <button class="btn btn-primary" onclick="addToCart('${item.inventoryItemId}')">В корзину</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function addToCart(inventoryItemId) {
+  const input = document.getElementById(`qty-${inventoryItemId}`);
+  const qty = Number(input?.value || 0);
+  if (!Number.isInteger(qty) || qty <= 0) {
+    showToast('Укажите корректное количество > 0', false);
+    return;
+  }
+
+  try {
+    const res = await sb.rpc('pm_customer_cart_upsert_item', {
+      p_inventory_item_id: inventoryItemId,
+      p_quantity: qty,
+    });
+    if (res.error) throw res.error;
+    showToast(`Добавлено в корзину: ${qty} шт`);
+    await refreshCartCounter();
+  } catch (err) {
+    showToast(err?.message || 'Не удалось добавить в корзину', false);
+  }
+}
+
+async function refreshCartCounter() {
+  if (!currentUser?.id) return;
+  try {
+    const cart = await PM_CUSTOMER_ORDERS.getOpenCart(sb, currentUser.id);
+    const count = (cart?.customer_cart_items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    const counter = document.getElementById('cart-counter');
+    if (counter) counter.textContent = String(count);
+  } catch (err) {
+    console.warn('refreshCartCounter failed', err);
+  }
 }
 </script>
 </body>

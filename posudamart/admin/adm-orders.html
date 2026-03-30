@@ -1,38 +1,44 @@
-<!DOCTYPE html><html lang='ru'><head>
+<!DOCTYPE html>
+<html lang='ru'>
+<head>
 <meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>
-<title>Admin — Supplier procurement visibility</title>
+<title>Admin — Orders & Demand visibility</title>
 <script src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js'></script>
 <script src='../shared/runtime-config.js'></script><script src='../shared/supabase-client.js'></script>
 <script src='../shared/domain/constants.js'></script><script src='../shared/domain/access-control.js'></script>
-<script src='../shared/domain/procurement.js'></script><script src='../shared/admin.js'></script>
-<style>body{font-family:Arial;background:#0f1117;color:#fff;margin:0;padding:18px}.panel{background:#181c27;border:1px solid #2a3045;border-radius:10px;padding:12px;margin-bottom:12px}.row{border-top:1px solid #2a3045;padding:8px 0}</style>
-</head><body>
+<script src='../shared/domain/customer-orders.js'></script><script src='../shared/admin.js'></script>
+<link rel="stylesheet" href="../shared/admin.css">
+<style>.row{border-top:1px solid var(--border);padding:10px 0}.mono{font-family:var(--mono)}</style>
+</head>
+<body>
 <div id='auth-loading'>Loading...</div>
-<header id='main-header' style='display:none'><a href='adm-dashboard.html' style='color:#9bb2ff'>← Dashboard</a></header>
-<main id='main-content' style='display:none'>
-<h1>Admin procurement visibility</h1>
-<div class='panel'><div id='orders'>Загрузка...</div></div>
-<div class='panel'><h3>Receiving summary</h3><div id='receiving'>Загрузка...</div></div>
+<header class="topbar" id="main-header" style="display:none">
+  <div class="brand-group"><a href="adm-dashboard.html" class="brand"><div class="brand-dot"></div>Posudamart</a><span class="admin-badge">👑 Админ</span></div>
+  <nav class="nav"><a href="adm-dashboard.html" class="nav-btn">🏠 Главная</a><a href="adm-orders.html" class="nav-btn active">📋 Заказы</a></nav>
+  <div class="topbar-right"><span class="user-name" id="admin-email">—</span><button class="btn-logout" onclick="adminSignOut()">Выйти</button></div>
+</header>
+<main class="container" id='main-content' style='display:none'>
+<h1>Admin visibility: customer runtime</h1>
+<div class='panel'><h3>Customer orders</h3><div id='customer-orders'>Загрузка...</div></div>
+<div class='panel'><h3>Active replenishment demand</h3><div id='demand'>Загрузка...</div></div>
 </main>
 <script>
-(async()=>{const u=await adminAuthGuard(); if(!u)return; await Promise.all([loadOrders(), loadReceiving()]);})();
+(async()=>{const u=await adminAuthGuard(); if(!u)return; await Promise.all([loadCustomerOrders(), loadDemand()]);})();
+
 function esc(v){const d=document.createElement('div');d.textContent=String(v??'');return d.innerHTML;}
-function money(v){return Number(v||0).toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₸';}
-function statusLabel(s){return PM_PROCUREMENT.STATUS_LABELS[s]||s;}
 
-async function loadOrders(){
-  const res = await sb.from('supplier_orders').select(`id,status,order_total,created_at,supplier_user_id,wholesaler_id,supplier_order_items(id,requested_units,confirmed_units,received_units_total,damaged_units_total,accepted_units_total,title_snapshot)`).order('created_at',{ascending:false}).limit(200);
-  if(res.error){document.getElementById('orders').textContent=res.error.message;return;}
-  const rows=(res.data||[]).map(PM_PROCUREMENT.normalizeOrder);
-  document.getElementById('orders').innerHTML = rows.map(o=>`<div class='row'><b>${esc(o.id.slice(0,8))}</b> · ${statusLabel(o.status)} · ${money(o.order_total)}<br><small>supplier=${esc(o.supplier_user_id)} | wholesaler=${esc(o.wholesaler_id)} | items=${o.supplier_order_items.length}</small></div>`).join('') || 'Нет supplier_orders';
+async function loadCustomerOrders(){
+  const res = await sb.from('customer_orders').select('id,status,total_amount,created_at,customer_user_id,wholesaler_id').order('created_at',{ascending:false}).limit(200);
+  if(res.error){document.getElementById('customer-orders').textContent=res.error.message;return;}
+
+  document.getElementById('customer-orders').innerHTML=(res.data||[]).map(o=>`<div class='row'><b class='mono'>${PM_CUSTOMER_ORDERS.formatOrderNumber(o.id)}</b> · ${PM_CUSTOMER_ORDERS.statusLabel(o.status)} · ${Number(o.total_amount||0).toFixed(2)} ₸<br><small>customer=${esc(o.customer_user_id)} | wholesaler=${esc(o.wholesaler_id)} | ${new Date(o.created_at).toLocaleString('ru-RU')}</small></div>`).join('')||'Нет customer orders';
 }
 
-async function loadReceiving(){
-  const res = await sb.from('supplier_order_receivings').select(`id,supplier_order_id,created_at,note,supplier_order_receiving_items(received_units,damaged_units,accepted_units)`).order('created_at',{ascending:false}).limit(200);
-  if(res.error){document.getElementById('receiving').textContent=res.error.message;return;}
-  document.getElementById('receiving').innerHTML = (res.data||[]).map(r=>{
-    const t=(r.supplier_order_receiving_items||[]).reduce((a,i)=>({received:a.received+Number(i.received_units||0),damaged:a.damaged+Number(i.damaged_units||0),accepted:a.accepted+Number(i.accepted_units||0)}),{received:0,damaged:0,accepted:0});
-    return `<div class='row'><b>${esc(r.id.slice(0,8))}</b> order=${esc((r.supplier_order_id||'').slice(0,8))}<br><small>received=${t.received} damaged=${t.damaged} accepted=${t.accepted}</small></div>`;
-  }).join('') || 'Нет приемок';
+async function loadDemand(){
+  const res = await sb.from('replenishment_demands').select('id,wholesaler_id,product_id,sold_qty,sales_count,uncovered_qty,pieces_per_box,suggested_boxes,suggested_qty,status,updated_at').in('status',['open','partially_covered']).gt('uncovered_qty',0).order('updated_at',{ascending:false}).limit(200);
+  if(res.error){document.getElementById('demand').textContent=res.error.message;return;}
+
+  document.getElementById('demand').innerHTML=(res.data||[]).map(d=>`<div class='row'><b>${esc(d.product_id)}</b> · sold=${Number(d.sold_qty||0)} · sales=${Number(d.sales_count||0)} · uncovered=${Number(d.uncovered_qty||0)}<br><small>to order: ${Number(d.suggested_boxes||0)} boxes / ${Number(d.suggested_qty||0)} units · wholesaler=${esc(d.wholesaler_id)}</small></div>`).join('')||'Нет активного demand';
 }
-</script></body></html>
+</script>
+</body></html>
