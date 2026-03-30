@@ -1,35 +1,30 @@
-# Domain Model — Stage 1 Foundation
+# Domain Model — Stage 2 Product/Catalog Runtime
 
-## Core identity
-- `profiles` (existing, extended): account role + account status.
-- `role_approvals`: approval requests/decisions for supplier and wholesaler roles.
-- `cities`: normalized city dictionary for wholesaler location.
-- `wholesalers`: wholesaler legal/profile/location aggregate.
+## What is runtime-active in Stage 2
 
-## Catalog
-- `catalog_categories`
-- `catalog_products`
-- `catalog_product_variants`
-- `catalog_product_images`
-- `supplier_products` (supplier-specific box economics and mapping to canonical product)
+### Canonical product catalog
+- `catalog_categories` — category tree/root categories for role-facing catalogs.
+- `catalog_products` — base товарная сущность с контролируемой идентичностью по `article`.
+- `catalog_product_variants` — варианты базового товара.
+- `catalog_product_images` — изображения товара/варианта.
 
-## Inventory / sales
-- `wholesaler_inventory_items` (piece-level stock)
-- `inventory_movements` (event journal)
-- `customer_orders`
-- `customer_order_items`
+### Supplier offering layer
+- `supplier_products` — предложение поставщика поверх canonical product:
+  - supplier owner (`supplier_user_id`),
+  - supplier article (`supplier_article`),
+  - `units_per_box`,
+  - `price_per_box`,
+  - `derived_unit_price` (generated column),
+  - active/inactive status.
 
-## B2B procurement
-- `supplier_orders`
-- `supplier_order_items`
+### Role-facing projections
+- **Wholesaler-facing catalog**: read model built from active `supplier_products` + canonical entities.
+- **Customer-facing catalog**: read model built from `wholesaler_inventory_items` + canonical entities (supplier catalog is not exposed directly).
 
-## Replenishment
-- `replenishment_demands` (aggregated uncovered demand per product/variant, supplier-agnostic)
-- `replenishment_demand_events` (history and traceability)
+## Identity strategy
+- Canonical identity of товар = normalized `catalog_products.article`.
+- One article can have multiple supplier offerings through `supplier_products`.
 
-## Returns
-- `returns`
-- `return_items`
-
-## Auditability
-- `audit_log` for key business events.
+## Stage 2 boundaries (explicitly not runtime here)
+- Full procurement flow (supplier order negotiation/receiving) — next stage.
+- Full customer checkout and reservation pipeline — next stage.

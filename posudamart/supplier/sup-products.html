@@ -9,6 +9,7 @@
   <script src="../shared/supabase-client.js"></script>
   <script src="../shared/domain/constants.js"></script>
   <script src="../shared/domain/access-control.js"></script>
+  <script src="../shared/domain/catalog.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../shared/supplier.css">
 </head>
@@ -138,13 +139,14 @@
 
 <script src="../shared/supplier.js"></script>
 <script>
-let products = [], categories = [], pfPhotoData = '';
+let offerings = [], categories = [], pfPhotoData = '', canonicalProducts = [];
 
 (async () => {
   try {
     const supplier = await authGuard();
     if (!supplier) return;
-    await Promise.all([loadCategories(), loadProducts()]);
+    await PM_CATALOG.assertSupplierAccess(sb);
+    await Promise.all([loadCategories(), loadOfferings()]);
   } catch (err) {
     console.error('sup-products init failed', err);
     showFatalLoadError(err?.message || 'Не удалось загрузить страницу товаров.', () => window.location.reload());
@@ -152,8 +154,7 @@ let products = [], categories = [], pfPhotoData = '';
 })();
 
 async function loadCategories() {
-  const res = await sb.from('categories').select('*').order('name');
-  categories = getSupabaseDataOrThrow(res, 'Категории');
+  categories = await PM_CATALOG.loadCategories(sb);
   const sel = document.getElementById('pf-category');
   const listSel = document.getElementById('filter-category');
   sel.innerHTML = '<option value="">— выбери категорию —</option>';
@@ -164,45 +165,65 @@ async function loadCategories() {
   });
 }
 
-async function loadProducts() {
-  const res = await sb.from('products').select('*').eq('supplier_id', currentSupplier.id).order('name');
-  products = getSupabaseDataOrThrow(res, 'Товары поставщика');
+async function loadOfferings() {
+  const { data, error } = await sb
+    .from('supplier_products')
+    .select(`id, product_id, supplier_article, units_per_box, price_per_box, derived_unit_price, is_active,
+      catalog_products!inner(id,name,article,category_id,description,is_active,catalog_product_images(image_url,sort_order),catalog_product_variants(variant_name,is_active))`)
+    .eq('supplier_user_id', currentUser.id)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+
+  offerings = (data || []).map((row) => ({
+    id: row.id,
+    product_id: row.product_id,
+    name: row.catalog_products?.name || '—',
+    article: row.supplier_article || row.catalog_products?.article || '',
+    category_id: row.catalog_products?.category_id || null,
+    description: row.catalog_products?.description || '',
+    units_per_box: Number(row.units_per_box || 0),
+    price_per_box: Number(row.price_per_box || 0),
+    derived_unit_price: Number(row.derived_unit_price || 0),
+    is_active: Boolean(row.is_active && row.catalog_products?.is_active),
+    photo: row.catalog_products?.catalog_product_images?.[0]?.image_url || '',
+    variants: (row.catalog_products?.catalog_product_variants || []).filter(v => v.is_active !== false).map(v => v.variant_name),
+  }));
+  canonicalProducts = offerings.map(o => ({ id: o.product_id, article: o.article }));
   render();
 }
 
 function render() {
   const term = (document.getElementById('search-products').value || '').toLowerCase().trim();
   const filterCat = document.getElementById('filter-category').value;
-  const filtered = products.filter(p => {
-    const matchesTerm = !term || (p.name || '').toLowerCase().includes(term) || (p.sku || '').toLowerCase().includes(term);
+  const filtered = offerings.filter(p => {
+    const matchesTerm = !term || (p.name || '').toLowerCase().includes(term) || (p.article || '').toLowerCase().includes(term);
     const matchesCat = !filterCat || p.category_id === filterCat;
     return matchesTerm && matchesCat;
   });
   const tbody = document.getElementById('products-tbody');
   document.getElementById('count').textContent = filtered.length;
-  document.getElementById('products-count').textContent = `${filtered.length} из ${products.length} товаров`;
+  document.getElementById('products-count').textContent = `${filtered.length} из ${offerings.length} товаров`;
   if (!filtered.length) {
     tbody.innerHTML = '<tr><td colspan="6" class="empty"><div class="empty-icon">📦</div>Товаров пока нет — добавь первый!</td></tr>';
     return;
   }
+
   tbody.innerHTML = filtered.map(p => {
     const cat = categories.find(c => c.id === p.category_id)?.name || '—';
     const safePhoto = sanitizeImageUrl(p.photo||'');
-    const photo = safePhoto
-      ? `<span data-safe-image="${safePhoto}" data-alt="${esc(p.name||'photo')}"></span>`
-      : `<div class="thumb-ph">📦</div>`;
+    const photo = safePhoto ? `<span data-safe-image="${safePhoto}" data-alt="${esc(p.name||'photo')}"></span>` : `<div class="thumb-ph">📦</div>`;
     return `<tr>
       <td>${photo}</td>
-      <td><strong>${esc(p.name)}</strong><br><span style="font-size:11px;color:var(--muted)">${esc(cat)}</span></td>
-      <td class="mono">${esc(p.sku||'—')}</td>
-      <td class="mono">${fmtMoney(p.box_price)}</td>
+      <td><strong>${esc(p.name)}</strong><br><span style="font-size:11px;color:var(--muted)">${esc(cat)} · ${p.is_active ? 'Активен' : 'Неактивен'}</span></td>
+      <td class="mono">${esc(p.article||'—')}</td>
+      <td class="mono">${fmtMoney(p.price_per_box)}</td>
       <td>${fmtNum(p.units_per_box)}</td>
       <td><div class="row-actions">
         <button class="btn btn-sm btn-ghost" onclick="editProduct('${p.id}')">✏</button>
-        <button class="btn btn-sm btn-danger" onclick="delProduct('${p.id}')">✕</button>
       </div></td>
     </tr>`;
   }).join('');
+
   tbody.querySelectorAll('[data-safe-image]').forEach(host=>{
     const img=document.createElement('img');
     img.className='thumb';
@@ -213,29 +234,22 @@ function render() {
   });
 }
 
-// Photo
 document.getElementById('pf-photo').addEventListener('change', async e => {
   const file = e.target.files?.[0]; if (!file) return;
   try { pfPhotoData = await resizeImage(file); setPhotoPreview(pfPhotoData); }
   catch { showToast('Не удалось загрузить фото', false); }
 });
+
 document.getElementById('pf-remove').addEventListener('click', () => {
   pfPhotoData = ''; document.getElementById('pf-photo').value = ''; setPhotoPreview('');
 });
+
 function setPhotoPreview(url) {
   const prev = document.getElementById('pf-preview'), ph = document.getElementById('pf-ph');
   if (url) { prev.src = url; prev.style.display = 'block'; ph.style.display = 'none'; }
   else { prev.removeAttribute('src'); prev.style.display = 'none'; ph.style.display = 'flex'; }
 }
 
-// Box price calc
-['pf-unit-price','pf-units'].forEach(id => {
-  document.getElementById(id).addEventListener('input', () => {
-    const u = parseFloat(document.getElementById('pf-unit-price').value)||0;
-    const n = parseInt(document.getElementById('pf-units').value)||0;
-    document.getElementById('pf-box-price').value = n > 0 ? (u*n).toFixed(2) : '';
-  });
-});
 ['search-products','filter-category'].forEach(id => document.getElementById(id).addEventListener('input', render));
 
 function resetForm() {
@@ -249,74 +263,60 @@ function resetForm() {
 document.getElementById('pf-cancel').addEventListener('click', resetForm);
 
 function editProduct(id) {
-  const p = products.find(x => x.id === id); if (!p) return;
+  const p = offerings.find(x => x.id === id); if (!p) return;
   document.getElementById('pf-id').value = p.id;
   document.getElementById('pf-name').value = p.name || '';
   document.getElementById('pf-category').value = p.category_id || '';
-  document.getElementById('pf-sku').value = p.sku || '';
+  document.getElementById('pf-sku').value = p.article || '';
   document.getElementById('pf-units').value = p.units_per_box || 1;
-  const up = p.units_per_box > 0 ? p.box_price / p.units_per_box : p.box_price;
-  document.getElementById('pf-unit-price').value = up || '';
-  document.getElementById('pf-box-price').value = p.box_price || '';
-  document.getElementById('pf-note').value = p.note || '';
+  document.getElementById('pf-unit-price').value = p.derived_unit_price || '';
+  document.getElementById('pf-box-price').value = p.price_per_box || '';
+  document.getElementById('pf-note').value = p.description || '';
   pfPhotoData = p.photo || ''; setPhotoPreview(pfPhotoData);
   document.getElementById('pf-submit').textContent = 'Обновить';
   document.getElementById('form-panel').scrollIntoView({ behavior: 'smooth' });
 }
 
-async function delProduct(id) {
-  const p = products.find(x => x.id === id); if (!p) return;
-  if (!confirm(`Удалить "${p.name}"?`)) return;
-  const { error } = await sb.from('products').delete().eq('id', id);
-  if (error) return showToast(error.message, false);
-  products = products.filter(x => x.id !== id);
-  render(); showToast('✓ Товар удалён');
-}
-
 document.getElementById('pf-submit').addEventListener('click', async () => {
-  const name = document.getElementById('pf-name').value.trim();
-  const catId = document.getElementById('pf-category').value;
-  const unitPrice = parseFloat(document.getElementById('pf-unit-price').value);
-  const units = parseInt(document.getElementById('pf-units').value);
-  if (!name) return showToast('Введи наименование', false);
-  if (!catId) return showToast('Выбери категорию', false);
-  if (!(unitPrice > 0)) return showToast('Введи цену за штуку', false);
-  if (!Number.isInteger(units) || units <= 0) return showToast('Штук в коробке — целое число > 0', false);
+  try {
+    const editId = document.getElementById('pf-id').value;
+    const units = parseInt(document.getElementById('pf-units').value, 10);
+    const unitPrice = parseFloat(document.getElementById('pf-unit-price').value || '0');
+    const payload = {
+      name: document.getElementById('pf-name').value,
+      article: document.getElementById('pf-sku').value,
+      categoryId: document.getElementById('pf-category').value,
+      description: document.getElementById('pf-note').value,
+      unitsPerBox: units,
+      pricePerBox: unitPrice * units,
+      imageUrl: pfPhotoData,
+      variants: [],
+      isActive: true,
+      productId: offerings.find(x => x.id === editId)?.product_id || null,
+    };
 
-  const editId = document.getElementById('pf-id').value;
-  const sku = document.getElementById('pf-sku').value.trim();
-  if (sku) {
-    const localDup = products.find(p => p.sku && p.sku.toLowerCase() === sku.toLowerCase() && p.id !== editId);
-    if (localDup) return showToast('Артикул уже существует. Укажи уникальный SKU.', false);
-    const dupRes = await sb.from('products').select('id').eq('supplier_id', currentSupplier.id).ilike('sku', sku).limit(1);
-    const dupRows = dupRes.data || [];
-    if (dupRows.find(r => r.id !== editId)) return showToast('Артикул уже существует. Укажи уникальный SKU.', false);
+    const btn = document.getElementById('pf-submit');
+    btn.disabled = true; btn.textContent = 'Сохраняем...';
+    await PM_CATALOG.upsertSupplierProduct(sb, currentUser.id, payload, editId || null);
+    btn.disabled = false;
+    resetForm();
+    await loadOfferings();
+    showToast(editId ? '✓ Товар обновлён' : '✓ Товар добавлен');
+  } catch (error) {
+    document.getElementById('pf-submit').disabled = false;
+    document.getElementById('pf-submit').textContent = document.getElementById('pf-id').value ? 'Обновить' : 'Сохранить';
+    showToast(error.message || 'Ошибка сохранения', false);
   }
+});
 
-  const btn = document.getElementById('pf-submit');
-  btn.disabled = true; btn.textContent = 'Сохраняем...';
-
-  const payload = {
-    supplier_id: currentSupplier.id, name,
-    category_id: catId, sku,
-    box_price: unitPrice * units, units_per_box: units,
-    note: document.getElementById('pf-note').value.trim(),
-    photo: pfPhotoData || '', updated_at: new Date().toISOString()
-  };
-
-  let error;
-  if (editId) {
-    ({ error } = await sb.from('products').update(payload).eq('id', editId));
-    if (!error) { const i = products.findIndex(x => x.id === editId); if (i >= 0) products[i] = { ...products[i], ...payload, id: editId }; }
-  } else {
-    const { data, error: err } = await sb.from('products').insert({ id: uid(), ...payload }).select().single();
-    error = err; if (!error && data) products.push(data);
-  }
-
-  btn.disabled = false;
-  if (error) { btn.textContent = editId?'Обновить':'Сохранить'; return showToast(error.message, false); }
-  resetForm(); render(); showToast(editId ? '✓ Товар обновлён' : '✓ Товар добавлен');
+['pf-unit-price','pf-units'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    const u = parseFloat(document.getElementById('pf-unit-price').value)||0;
+    const n = parseInt(document.getElementById('pf-units').value)||0;
+    document.getElementById('pf-box-price').value = n > 0 ? (u*n).toFixed(2) : '';
+  });
 });
 </script>
+
 </body>
 </html>
