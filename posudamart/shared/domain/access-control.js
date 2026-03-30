@@ -78,7 +78,7 @@
 
     const profileRes = await sb
       .from('profiles')
-      .select('id, role, account_status')
+      .select('id, role')
       .eq('id', session.user.id)
       .single();
 
