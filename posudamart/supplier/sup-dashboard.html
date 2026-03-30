@@ -9,6 +9,7 @@
   <script src="../shared/supabase-client.js"></script>
   <script src="../shared/domain/constants.js"></script>
   <script src="../shared/domain/access-control.js"></script>
+  <script src="../shared/domain/procurement.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../shared/supplier.css">
 </head>
@@ -109,22 +110,19 @@
 
 <script src="../shared/supplier.js"></script>
 <script>
-function buildUnifiedOrders(orders, clientOrders) {
-  return [
-    ...orders.map(o => ({ ...o, source: 'admin', orderDate: o.date || o.created_at || '' })),
-    ...clientOrders.map(o => ({ ...o, source: 'client', orderDate: o.created_at || o.date || '' }))
-  ].sort((a, b) => new Date(b.orderDate || 0) - new Date(a.orderDate || 0));
+function isActiveProcurementStatus(status) {
+  return !['received', 'completed', 'cancelled'].includes(String(status || '').toLowerCase());
 }
 
-function renderDashboardStats(products, unifiedOrders) {
-  const active = unifiedOrders.filter(o => !['Закрыт', 'Отменён', 'В истории'].includes(o.status));
-  const total = unifiedOrders.reduce((s, o) => s + (o.items || []).reduce((ss, i) => ss + Number(i.totalPrice || 0), 0), 0);
+function renderDashboardStats(products, orders) {
+  const active = orders.filter(o => isActiveProcurementStatus(o.status));
+  const total = orders.reduce((sum, o) => sum + Number(o.totals?.amount || 0), 0);
 
   document.getElementById('stat-products').textContent = products.length;
   document.getElementById('stat-orders').textContent = active.length;
   document.getElementById('stat-total').textContent = fmtMoney(total);
 
-  const recent = unifiedOrders.slice(0, 5);
+  const recent = orders.slice(0, 5);
   if (!recent.length) {
     document.getElementById('recent-orders').innerHTML = '<div class="empty"><div class="empty-icon">📋</div>Заказов пока нет</div>';
     return;
@@ -133,14 +131,17 @@ function renderDashboardStats(products, unifiedOrders) {
   document.getElementById('recent-orders').innerHTML = `
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Номер</th><th>Источник</th><th>Дата</th><th>Статус</th><th>Сумма</th></tr></thead>
+        <thead><tr><th>Номер</th><th>Оптовик</th><th>Дата</th><th>Статус</th><th>Сумма</th></tr></thead>
         <tbody>${recent.map(o => {
-          const sum = (o.items || []).reduce((s, i) => s + Number(i.totalPrice || 0), 0);
-          return `<tr style="cursor:pointer" onclick="location.href='sup-orders.html?source=${o.source}&open_order=${o.id}'">
-            <td class="mono"><strong>#${esc(o.number)}</strong></td>
-            <td>${o.source === 'client' ? 'Клиент' : 'Posudamart'}</td>
-            <td>${esc((o.orderDate || '').slice(0, 10))}</td>
-            <td>${o.source === 'client' ? `<span class="badge badge-draft">${esc(o.status)}</span>` : statusBadge(o.status)}</td>
+          const orderDate = o.placed_at || o.created_at || '';
+          const sum = Number(o.totals?.amount || 0);
+          const wholesalerLabel = o.wholesaler?.display_name || o.wholesaler?.legal_name || o.wholesaler_id || '—';
+          const statusLabel = PM_PROCUREMENT.STATUS_LABELS[o.status] || o.status || '—';
+          return `<tr style="cursor:pointer" onclick="location.href='sup-orders.html?open_order=${o.id}'">
+            <td class="mono"><strong>#${esc((o.id || '').slice(0, 8))}</strong></td>
+            <td>${esc(wholesalerLabel)}</td>
+            <td>${esc(orderDate.slice(0, 10))}</td>
+            <td><span class="badge badge-draft">${esc(statusLabel)}</span></td>
             <td class="mono">${fmtMoney(sum)}</td>
           </tr>`;
         }).join('')}</tbody>
@@ -149,16 +150,12 @@ function renderDashboardStats(products, unifiedOrders) {
 }
 
 async function refreshDashboardData(supplier, contextLabel) {
-  const [productsRes, ordersRes, clientOrdersRes] = await Promise.all([
-    sb.from('products').select('id').eq('supplier_id', supplier.id),
-    sb.from('orders').select('*').eq('supplier_id', supplier.id).order('date', { ascending: false }),
-    sb.from('client_orders').select('*').eq('supplier_id', supplier.id).order('created_at', { ascending: false })
+  const [productsRes, orders] = await Promise.all([
+    sb.from('supplier_products').select('id').eq('supplier_user_id', supplier.user_id),
+    PM_PROCUREMENT.loadSupplierOrders(sb, supplier.user_id),
   ]);
   const products = getSupabaseDataOrThrow(productsRes, `Товары поставщика (${contextLabel})`);
-  const orders = getSupabaseDataOrThrow(ordersRes, `Заказы поставщика (${contextLabel})`);
-  const clientOrders = getSupabaseDataOrThrow(clientOrdersRes, `Заказы клиентов поставщику (${contextLabel})`);
-  const unifiedOrders = buildUnifiedOrders(orders, clientOrders);
-  renderDashboardStats(products, unifiedOrders);
+  renderDashboardStats(products, orders);
 }
 
 (async () => {
@@ -169,13 +166,13 @@ async function refreshDashboardData(supplier, contextLabel) {
     await refreshDashboardData(supplier, 'initial');
 
   // Real-time
-  sb.channel('rt-orders').on('postgres_changes',
-    { event: '*', schema: 'public', table: 'orders', filter: `supplier_id=eq.${supplier.id}` },
-    async () => refreshDashboardData(supplier, 'real-time orders')
+  sb.channel('rt-supplier-orders').on('postgres_changes',
+    { event: '*', schema: 'public', table: 'supplier_orders', filter: `supplier_user_id=eq.${supplier.user_id}` },
+    async () => refreshDashboardData(supplier, 'real-time supplier_orders')
   ).subscribe();
-  sb.channel('rt-client-orders-dashboard').on('postgres_changes',
-    { event: '*', schema: 'public', table: 'client_orders', filter: `supplier_id=eq.${supplier.id}` },
-    async () => refreshDashboardData(supplier, 'real-time client_orders')
+  sb.channel('rt-supplier-products').on('postgres_changes',
+    { event: '*', schema: 'public', table: 'supplier_products', filter: `supplier_user_id=eq.${supplier.user_id}` },
+    async () => refreshDashboardData(supplier, 'real-time supplier_products')
   ).subscribe();
   } catch (err) {
     console.error('sup-dashboard init failed', err);
