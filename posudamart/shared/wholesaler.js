@@ -4,11 +4,20 @@ const PM_ACCESS = window.PM_ACCESS;
 
 let currentWholesalerUser = null;
 let currentWholesalerProfile = null;
+let redirectIssued = false;
+
+function redirectToIndex(reason) {
+  if (redirectIssued) return;
+  redirectIssued = true;
+  console.info(`[PM_REDIRECT] ${window.location.pathname} -> ../index.html | reason=${reason}`);
+  window.location.href = '../index.html';
+}
 
 async function wholesalerAuthGuard() {
+  console.info('[PM_AUTH_BOOTSTRAP] wholesalerAuthGuard:start');
   const access = await PM_ACCESS.loadAccessContext(sb);
   if (!access || !PM_ACCESS.hasRouteAccess(access, [PM_ENUMS.ROLES.WHOLESALER])) {
-    window.location.href = '../index.html';
+    redirectToIndex('no route access for wholesaler');
     return null;
   }
 
@@ -20,12 +29,12 @@ async function wholesalerAuthGuard() {
 
   if (error) {
     alert(error.message || 'Не удалось загрузить профиль оптовика.');
-    window.location.href = '../index.html';
+    redirectToIndex('failed to load wholesalers profile');
     return null;
   }
 
   if (!wholesaler || wholesaler.approval_status !== PM_ENUMS.APPROVAL_STATUSES.APPROVED) {
-    window.location.href = '../index.html';
+    redirectToIndex('wholesaler approval is not approved');
     return null;
   }
 
@@ -38,5 +47,5 @@ async function wholesalerAuthGuard() {
 
 async function wholesalerSignOut() {
   await sb.auth.signOut();
-  window.location.href = '../index.html';
+  redirectToIndex('sign out');
 }

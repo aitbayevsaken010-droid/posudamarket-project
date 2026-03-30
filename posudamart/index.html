@@ -518,14 +518,33 @@ function selectRegRole(role) {
   }
 }
 
+const PM_DEBUG_REDIRECTS = true;
+
+function traceAuthBootstrap(message, extra) {
+  if (!PM_DEBUG_REDIRECTS) return;
+  if (typeof extra === 'undefined') {
+    console.info(`[PM_AUTH_BOOTSTRAP] ${message}`);
+    return;
+  }
+  console.info(`[PM_AUTH_BOOTSTRAP] ${message}`, extra);
+}
+
+function traceRedirect(target, reason) {
+  if (!PM_DEBUG_REDIRECTS) return;
+  console.info(`[PM_REDIRECT] ${window.location.pathname} -> ${target} | reason=${reason}`);
+}
+
 // ── Проверка сессии при загрузке ──
 restorePendingSignupState();
 (async () => {
+  traceAuthBootstrap('start');
   const { data: { session } } = await sb.auth.getSession();
   if (session) {
+    traceAuthBootstrap('session detected', { userId: session.user.id });
     await redirectByRole(session.user);
     return;
   }
+  traceAuthBootstrap('no active session');
 
   const hash = window.location.hash || '';
   if (hash.includes('type=signup') || hash.includes('type=email')) {
@@ -539,7 +558,12 @@ restorePendingSignupState();
 async function redirectByRole(user) {
   const { data: profile } = await sb.from('profiles').select('role, full_name, phone').eq('id', user.id).single();
   if (!profile) return;
-  if (profile.role === 'admin') { window.location.href = 'admin/adm-dashboard.html'; return; }
+  traceAuthBootstrap('profile loaded', { role: profile.role, userId: user.id });
+  if (profile.role === 'admin') {
+    traceRedirect('admin/adm-dashboard.html', 'role=admin');
+    window.location.href = 'admin/adm-dashboard.html';
+    return;
+  }
   if (profile.role === 'customer' || profile.role === 'client') {
     const hasName = Boolean(String(profile.full_name || '').trim());
     const hasPhone = Boolean(String(profile.phone || '').trim());
@@ -549,30 +573,35 @@ async function redirectByRole(user) {
       showStep('step-client-profile');
       return;
     }
+    traceRedirect('client/clt-dashboard.html', 'role=customer profile-complete');
     window.location.href = 'client/clt-dashboard.html';
     return;
   }
   if (profile.role === 'wholesaler') {
-    const { data: wholesaler } = await sb.from('wholesalers').select('approval_status').eq('user_id', user.id).maybeSingle();
-    if (!wholesaler || wholesaler.approval_status === 'pending') {
+    const approvalStatus = await PM_ACCESS.getApprovalStatus(sb, user.id, profile.role);
+    if (approvalStatus !== PM_ENUMS.APPROVAL_STATUSES.APPROVED) {
       showStep('step-pending');
       document.getElementById('pending-name').textContent = 'Оптовик';
       return;
     }
-    if (wholesaler.approval_status === 'approved') { window.location.href = 'wholesaler/wh-dashboard.html'; return; }
-    showStep('step-pending');
-    document.getElementById('pending-name').textContent = 'Оптовик';
+    traceRedirect('wholesaler/wh-dashboard.html', 'role=wholesaler approved');
+    window.location.href = 'wholesaler/wh-dashboard.html';
     return;
   }
 
   // role === 'supplier'
-  const { data: supplier } = await sb.from('suppliers').select('status, name').eq('user_id', user.id).single();
+  const { data: supplier } = await sb.from('suppliers').select('status, name').eq('user_id', user.id).maybeSingle();
   if (!supplier) {
     // Зарегистрировался но не заполнил профиль компании — показываем форму
     showStep('step-register-profile');
     return;
   }
-  if (supplier.status === 'active') { window.location.href = 'supplier/sup-dashboard.html'; return; }
+  const approvalStatus = await PM_ACCESS.getApprovalStatus(sb, user.id, profile.role);
+  if (approvalStatus === PM_ENUMS.APPROVAL_STATUSES.APPROVED || supplier.status === 'active') {
+    traceRedirect('supplier/sup-dashboard.html', 'role=supplier approved');
+    window.location.href = 'supplier/sup-dashboard.html';
+    return;
+  }
   document.getElementById('pending-name').textContent = supplier.name;
   showStep('step-pending');
 }
