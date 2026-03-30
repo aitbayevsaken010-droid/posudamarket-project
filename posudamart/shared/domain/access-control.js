@@ -55,6 +55,19 @@
       }
     }
 
+    // Backward compatibility for legacy wholesaler flow.
+    if (normalizedRole === PM_ENUMS.ROLES.WHOLESALER) {
+      const wholesalerRes = await sb
+        .from('wholesalers')
+        .select('approval_status')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!wholesalerRes.error && wholesalerRes.data?.approval_status) {
+        return String(wholesalerRes.data.approval_status || '').toLowerCase();
+      }
+    }
+
     return PM_ENUMS.APPROVAL_STATUSES.PENDING;
   }
 
