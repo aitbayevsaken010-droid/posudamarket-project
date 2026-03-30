@@ -33,10 +33,14 @@
   const SUPPLIER_ORDER_STATUSES = Object.freeze({
     NEW: 'new',
     ADJUSTED_BY_SUPPLIER: 'adjusted_by_supplier',
+    CHANGED_BY_SUPPLIER: 'changed_by_supplier',
     AWAITING_WHOLESALER_CONFIRMATION: 'awaiting_wholesaler_confirmation',
+    CONFIRMED: 'confirmed',
     PROCESSING: 'processing',
     SHIPMENT_PROOF_ATTACHED: 'shipment_proof_attached',
+    SHIPPED: 'shipped',
     IN_TRANSIT: 'in_transit',
+    RECEIVED: 'received',
     CANCELLED: 'cancelled',
     COMPLETED: 'completed',
   });
@@ -44,11 +48,15 @@
   const INVENTORY_MOVEMENT_TYPES = Object.freeze({
     RECEIPT_GOOD: 'receipt_good',
     RECEIPT_DEFECT: 'receipt_defect',
+    PROCUREMENT_RECEIVED: 'procurement_received',
+    DAMAGED_ON_RECEIVING: 'damaged_on_receiving',
     CUSTOMER_SALE: 'customer_sale',
     CUSTOMER_CANCEL_RESTOCK: 'customer_cancel_restock',
     MANUAL_ADJUSTMENT: 'manual_adjustment',
     RETURN_IN: 'return_in',
     RETURN_OUT: 'return_out',
+    RESERVATION_HOLD: 'reservation_hold',
+    RESERVATION_RELEASE: 'reservation_release',
   });
 
   const RETURN_STATUSES = Object.freeze({

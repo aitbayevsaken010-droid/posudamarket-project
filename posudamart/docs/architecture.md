@@ -1,32 +1,34 @@
-# Architecture — Stage 2 Catalog Runtime
+# Architecture — Stage 3 Procurement Runtime
 
-## Core principle
-Stage 2 switches product runtime from legacy flat tables (`products`, `categories`) to normalized catalog domain introduced in Stage 1 foundation.
+## What changed from Stage 1 + Stage 2
+- Stage 1 foundation entities are kept and extended (no second order architecture).
+- Stage 2 canonical catalog remains source of truth for product identity.
+- Stage 3 adds runtime procurement bridge: `supplier_products` → `supplier_orders` → receiving → `wholesaler_inventory_items` + `inventory_movements`.
 
-## Runtime layers
+## Runtime modules
 - `shared/domain/catalog.js`
-  - input normalization (`article`, image URL, money),
-  - supplier mutation validation,
-  - role-aware guard for supplier mutations,
-  - mappers:
-    - supplier offerings -> wholesaler catalog DTO,
-    - wholesaler inventory -> customer catalog DTO.
-- Role entry points remain in `shared/{supplier,client,wholesaler,admin}.js`.
+  - unchanged core canonical catalog + supplier offering behavior.
+- `shared/domain/procurement.js` (new)
+  - status labels/mappers,
+  - order normalization,
+  - cart submit RPC call,
+  - role page helper loaders for supplier/wholesaler views.
 
-## Data model usage
-- Write path (supplier):
-  1. validate payload,
-  2. upsert/find canonical `catalog_products` by normalized article,
-  3. write variants/images,
-  4. create/update `supplier_products`.
-- Read path (wholesaler): category-first browsing of active supplier offerings.
-- Read path (customer): category-first browsing of wholesaler inventory projection only.
-- Read path (admin): visibility into categories and supplier-owned offerings/status.
+## Runtime flow (implemented)
+1. Wholesaler browses supplier catalog and builds procurement cart.
+2. Cart submit calls DB RPC `pm_submit_procurement_cart`.
+3. DB splits cart by supplier and creates one `supplier_orders` per supplier.
+4. Supplier adjusts or confirms quantities (`pm_supplier_adjust_order`).
+5. Wholesaler confirms/cancels changed order (`pm_wholesaler_confirm_order`).
+6. Supplier moves logistics statuses (`pm_supplier_set_logistics_status`).
+7. Wholesaler receives with damaged split (`pm_wholesaler_receive_order`).
+8. DB writes receiving records + inventory movements + updates stock.
 
-## Derived unit price decision
-`derived_unit_price` is **stored generated** in DB (`supplier_products`) from `price_per_box / units_per_box`.
-Reason: keeps deterministic economics, avoids UI drift, and allows indexing/filtering in later procurement stages.
+## Persistence strategy
+- All procurement/receiving/inventory operations persist in Supabase Postgres.
+- No localStorage simulation for inventory updates.
+- Status history persisted in `supplier_order_status_history`.
 
-## Legacy status
-- Legacy pages tied to `products/categories` are partially replaced for Stage 2 catalog pages.
-- Legacy order flows are preserved and intentionally not fully migrated in Stage 2.
+## Deliberate Stage 3 limits
+- Attachment handling is metadata-only (`jsonb` with url/reference), not full media pipeline.
+- Reservation hold/release movement types are prepared in enum but reservation runtime remains next stage.
