@@ -9,13 +9,13 @@
   <script src="../shared/supabase-client.js"></script>
   <script src="../shared/domain/constants.js"></script>
   <script src="../shared/domain/access-control.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="../shared/domain/customer-orders.js"></script>
+  <script src="../shared/client.js"></script>
   <link rel="stylesheet" href="../shared/client.css">
 </head>
 <body>
 <div id="auth-loading"><div class="spinner"></div></div>
 <div id="toast"></div>
-
 <header class="topbar">
   <div class="brand-group">
     <a href="clt-dashboard.html" class="brand"><div class="brand-dot"></div>Posudamart</a>
@@ -24,7 +24,8 @@
   <nav class="nav">
     <a href="clt-dashboard.html" class="nav-btn active">🏠 Главная</a>
     <a href="clt-catalog.html" class="nav-btn">🛍 Каталог</a>
-    <a href="clt-orders.html" class="nav-btn" id="nav-orders">📋 Заказы</a>
+    <a href="clt-cart.html" class="nav-btn">🧺 Корзина</a>
+    <a href="clt-orders.html" class="nav-btn">📋 Заказы</a>
     <a href="clt-profile.html" class="nav-btn">👤 Профиль</a>
   </nav>
   <div class="topbar-right">
@@ -32,98 +33,46 @@
     <button class="btn-logout" onclick="signOut()">Выйти</button>
   </div>
 </header>
-
 <main class="container">
-  <div class="page-head">
-    <h1 id="welcome-title">Добро пожаловать!</h1>
+  <div class="page-head"><h1 id="welcome-title">Добро пожаловать!</h1></div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+    <div class="panel"><div style="font-size:11px;color:var(--muted)">Активные заказы</div><div id="stat-active" style="font-size:30px;font-weight:800">0</div></div>
+    <div class="panel"><div style="font-size:11px;color:var(--muted)">Завершённые</div><div id="stat-completed" style="font-size:30px;font-weight:800">0</div></div>
+    <div class="panel"><div style="font-size:11px;color:var(--muted)">В корзине, шт</div><div id="stat-cart" style="font-size:30px;font-weight:800">0</div></div>
   </div>
-
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
-    <div class="panel">
-      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Активных заказов</div>
-      <div style="font-size:28px;font-weight:800;color:var(--accent)" id="stat-active">—</div>
-    </div>
-    <div class="panel">
-      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Ожидают ответа</div>
-      <div style="font-size:28px;font-weight:800;color:var(--warning)" id="stat-changed">—</div>
-    </div>
-    <div class="panel">
-      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Подтверждено</div>
-      <div style="font-size:28px;font-weight:800;color:var(--success)" id="stat-confirmed">—</div>
-    </div>
-  </div>
-
-  <div class="panel" style="margin-bottom:16px">
-    <div class="panel-title">Последние заказы</div>
-    <div id="recent-orders"><div class="empty"><div class="empty-icon">📋</div>Заказов пока нет</div></div>
-  </div>
-
-  <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">
-    <a href="clt-catalog.html" class="panel" style="text-decoration:none;color:var(--text);cursor:pointer;transition:border-color .15s;display:flex;align-items:center;gap:16px" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
-      <div style="font-size:32px">🛍</div>
-      <div><div style="font-weight:700;font-size:15px">Каталог товаров</div><div style="font-size:12px;color:var(--muted);margin-top:3px">Все товары поставщиков</div></div>
-    </a>
-    <a href="clt-orders.html" class="panel" style="text-decoration:none;color:var(--text);cursor:pointer;transition:border-color .15s;display:flex;align-items:center;gap:16px" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
-      <div style="font-size:32px">📋</div>
-      <div><div style="font-weight:700;font-size:15px">Мои заказы</div><div style="font-size:12px;color:var(--muted);margin-top:3px">История и статусы</div></div>
-    </a>
-  </div>
+  <div class="panel" id="recent-orders"></div>
 </main>
-
-<nav class="mob-nav">
-  <div class="mob-nav-inner">
-    <a href="clt-dashboard.html" class="mob-btn active"><span class="ico">🏠</span>Главная</a>
-    <a href="clt-catalog.html" class="mob-btn"><span class="ico">🛍</span>Каталог</a>
-    <a href="clt-orders.html" class="mob-btn"><span class="ico">📋</span>Заказы</a>
-    <a href="clt-profile.html" class="mob-btn"><span class="ico">👤</span>Профиль</a>
-  </div>
-</nav>
-
-<script src="../shared/client.js"></script>
 <script>
 (async()=>{
   try {
     const profile = await authGuard();
-    if(!profile) return;
-    document.getElementById('welcome-title').textContent = 'Привет, ' + (profile.full_name || profile.email) + '!';
+    if (!profile) return;
+    document.getElementById('welcome-title').textContent = `Привет, ${profile.full_name || currentUser?.email || 'клиент'}!`;
 
-    const ordersRes = await sb.from('client_orders')
-      .select('*').eq('client_id', profile.id)
-      .order('created_at',{ascending:false});
-    const all = getSupabaseDataOrThrow(ordersRes, 'Список заказов клиента');
-  const active    = all.filter(o=>!['Отменён','В истории'].includes(o.status));
-  const changed   = all.filter(o=>o.status==='Скорректирован');
-  const confirmed = all.filter(o=>o.status==='В работе');
+    const [ordersRes, cartRes] = await Promise.all([
+      sb.from('customer_orders').select('id,status,total_amount,created_at').eq('customer_user_id', currentUser.id).order('created_at', { ascending: false }),
+      PM_CUSTOMER_ORDERS.getOpenCart(sb, currentUser.id),
+    ]);
+    if (ordersRes.error) throw ordersRes.error;
 
-  document.getElementById('stat-active').textContent    = active.length;
-  document.getElementById('stat-changed').textContent   = changed.length;
-  document.getElementById('stat-confirmed').textContent = confirmed.length;
+    const orders = ordersRes.data || [];
+    const active = orders.filter((o) => PM_CUSTOMER_ORDERS.ACTIVE_STATUSES.includes(o.status)).length;
+    const completed = orders.filter((o) => o.status === 'completed').length;
+    const cartUnits = (cartRes?.customer_cart_items || []).reduce((sum, i) => sum + Number(i.quantity || 0), 0);
 
-  // Show notification dot on nav if there are changed orders
-  if(changed.length>0){
-    document.getElementById('nav-orders').innerHTML =
-      '📋 Заказы <span class="notif-dot"></span>';
-  }
+    document.getElementById('stat-active').textContent = active;
+    document.getElementById('stat-completed').textContent = completed;
+    document.getElementById('stat-cart').textContent = cartUnits;
 
-  const recent = all.slice(0,5);
-  if(recent.length){
-    document.getElementById('recent-orders').innerHTML=`
-      <div class="table-wrap"><table>
-        <thead><tr><th>Номер</th><th>Дата</th><th>Статус</th><th>Сумма</th></tr></thead>
-        <tbody>${recent.map(o=>{
-          const sum=(o.items||[]).reduce((s,i)=>s+Number(i.totalPrice||0),0);
-          return`<tr style="cursor:pointer" onclick="location.href='clt-orders.html'">
-            <td class="mono"><strong>#${esc(o.number)}</strong></td>
-            <td style="color:var(--muted)">${esc(o.created_at?.slice(0,10)||'')}</td>
-            <td>${statusBadge(o.status)}</td>
-            <td class="mono">${fmtMoney(sum)}</td>
-          </tr>`;
-        }).join('')}</tbody>
-      </table></div>`;
-  }
+    const recent = orders.slice(0, 5);
+    document.getElementById('recent-orders').innerHTML = recent.length
+      ? `<div class="panel-title">Последние customer-заказы</div><div class="table-wrap"><table><thead><tr><th>Номер</th><th>Дата</th><th>Статус</th><th>Сумма</th></tr></thead><tbody>${recent.map((o)=>`<tr><td>${PM_CUSTOMER_ORDERS.formatOrderNumber(o.id)}</td><td>${new Date(o.created_at).toLocaleDateString('ru-RU')}</td><td>${PM_CUSTOMER_ORDERS.statusBadge(o.status)}</td><td>${Number(o.total_amount || 0).toFixed(2)} ₸</td></tr>`).join('')}</tbody></table></div>`
+      : '<div class="empty"><div class="empty-icon">📋</div>Заказов пока нет</div>';
+
+    document.getElementById('auth-loading').style.display = 'none';
   } catch (err) {
-    console.error('clt-dashboard init failed', err);
-    showFatalLoadError(err?.message || 'Не удалось загрузить страницу.', () => window.location.reload());
+    console.error(err);
+    showFatalLoadError(err?.message || 'Не удалось загрузить dashboard клиента.', () => window.location.reload());
   }
 })();
 </script>

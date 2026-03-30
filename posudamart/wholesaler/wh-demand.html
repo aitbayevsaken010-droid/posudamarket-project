@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wholesaler — Replenishment demand</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="../shared/runtime-config.js"></script>
+  <script src="../shared/supabase-client.js"></script>
+  <script src="../shared/domain/constants.js"></script>
+  <script src="../shared/domain/access-control.js"></script>
+  <script src="../shared/wholesaler.js"></script>
+  <link rel="stylesheet" href="../shared/client.css">
+</head>
+<body>
+<div id="auth-loading"><div class="spinner"></div></div>
+<header class="topbar">
+  <a href="wh-dashboard.html" class="brand"><div class="brand-dot"></div>Posudamart Wholesaler</a>
+  <nav class="nav">
+    <a href="wh-dashboard.html" class="nav-btn">🏠 Главная</a>
+    <a href="wh-catalog.html" class="nav-btn">🧾 Procurement</a>
+    <a href="wh-orders.html" class="nav-btn">🛒 Customer orders</a>
+    <a href="wh-demand.html" class="nav-btn active">📈 Demand</a>
+  </nav>
+  <div class="topbar-right"><span id="user-name" class="user-name">—</span><button class="btn-logout" onclick="wholesalerSignOut()">Выйти</button></div>
+</header>
+<main class="container">
+  <h1>Активный replenishment demand</h1>
+  <p style="color:var(--muted)">Показываются карточки с sales_count &gt; 3 и uncovered_qty &gt; 0.</p>
+  <div id="demand-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px"></div>
+</main>
+<script>
+(async()=>{
+  const wholesaler=await wholesalerAuthGuard();
+  if(!wholesaler) return;
+  await loadDemand(wholesaler.id);
+  document.getElementById('auth-loading').style.display='none';
+})();
+
+async function loadDemand(wholesalerId){
+  const res = await sb.from('replenishment_demands').select(`
+    id, product_id, variant_id, sold_qty, sales_count, uncovered_qty, pieces_per_box, suggested_boxes, suggested_qty, status, updated_at,
+    catalog_products(name, article, catalog_product_images(image_url, sort_order))
+  `).eq('wholesaler_id', wholesalerId).in('status', ['open','partially_covered']).gt('uncovered_qty', 0).gt('sales_count', 3).order('updated_at', {ascending:false});
+  if(res.error){document.getElementById('demand-cards').innerHTML=`<div class='panel'>${res.error.message}</div>`;return;}
+  const rows=res.data||[];
+  const wrap=document.getElementById('demand-cards');
+  if(!rows.length){wrap.innerHTML='<div class="panel">Нет активного demand (порог &gt; 3 продаж).</div>';return;}
+
+  wrap.innerHTML=rows.map(d=>{
+    const p=d.catalog_products||{};
+    const img=sanitizeImageUrl(p.catalog_product_images?.[0]?.image_url||'');
+    return `<div class='panel'>
+      <div style='display:flex;gap:10px;align-items:flex-start'>
+        ${img?`<img src='${img}' class='thumb' alt='${esc(p.name||'product')}'>`:'<div class="thumb-ph">📦</div>'}
+        <div>
+          <div style='font-weight:800'>${esc(p.name||'—')}</div>
+          <div style='font-size:12px;color:var(--muted)'>Артикул: ${esc(p.article||'—')}</div>
+        </div>
+      </div>
+      <div style='margin-top:10px;display:grid;gap:4px;font-size:13px'>
+        <div>Продано: <b>${Number(d.sold_qty||0)} шт</b> (сделок: ${Number(d.sales_count||0)})</div>
+        <div>Uncovered: <b>${Number(d.uncovered_qty||0)} шт</b></div>
+        <div>Units/box: <b>${Number(d.pieces_per_box||1)}</b></div>
+        <div style='color:var(--accent)'><b>К заказу: ${Number(d.suggested_boxes||0)} коробка / ${Number(d.suggested_qty||0)} шт</b></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+</script>
+</body>
+</html>

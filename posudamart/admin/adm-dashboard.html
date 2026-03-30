@@ -75,16 +75,17 @@ async function onAdminLoggedIn() {
 }
 
 async function loadStats() {
-  const [sup, cat, prod, ord] = await Promise.all([
+  const [sup, cat, prod, ord, demand] = await Promise.all([
     sb.from('suppliers').select('id', {count:'exact',head:true}).eq('status','active'),
     sb.from('catalog_categories').select('id', {count:'exact',head:true}),
     sb.from('supplier_products').select('id', {count:'exact',head:true}),
-    sb.from('orders').select('id', {count:'exact',head:true}).neq('status','Закрыт').eq('archived',false)
+    sb.from('customer_orders').select('id', {count:'exact',head:true}).in('status',['new','confirmed','processing','ready_for_pickup','shipped']),
+    sb.from('replenishment_demands').select('id', {count:'exact',head:true}).in('status',['open','partially_covered']).gt('uncovered_qty',0)
   ]);
   document.getElementById('stat-suppliers').textContent = sup.count ?? 0;
   document.getElementById('stat-categories').textContent = cat.count ?? 0;
   document.getElementById('stat-products').textContent = prod.count ?? 0;
-  document.getElementById('stat-orders').textContent = ord.count ?? 0;
+  document.getElementById('stat-orders').textContent = `${ord.count ?? 0} / demand ${demand.count ?? 0}`;
 }
 
 async function loadModeration() {

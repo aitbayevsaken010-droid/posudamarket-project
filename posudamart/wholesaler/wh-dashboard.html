@@ -9,20 +9,31 @@
   <script src="../shared/supabase-client.js"></script>
   <script src="../shared/domain/constants.js"></script>
   <script src="../shared/domain/access-control.js"></script>
-  <style>body{font-family:Arial,sans-serif;background:#0f1117;color:#fff;margin:0;padding:24px} .card{background:#181c27;border:1px solid #2a3045;border-radius:12px;padding:16px;max-width:720px}</style>
+  <script src="../shared/wholesaler.js"></script>
+  <link rel="stylesheet" href="../shared/client.css">
 </head>
 <body>
-  <div class="card">
-    <h1>Оптовик: архитектурный foundation</h1>
-    <p>Этот раздел добавлен как базовый каркас роли <b>wholesaler</b> для следующих этапов.</p>
-    <p>Пользователь: <span id="user-name">—</span></p>
-    <p>Stage 3: доступен runtime procurement lifecycle (cart → supplier order → receiving → inventory movements).</p>
-    <p><a href="wh-catalog.html" style="color:#9bb2ff">🗂 Открыть procurement workspace</a></p>
-    <button onclick="wholesalerSignOut()">Выйти</button>
+<div id="auth-loading"><div class="spinner"></div></div>
+<header class="topbar">
+  <a href="wh-dashboard.html" class="brand"><div class="brand-dot"></div>Posudamart Wholesaler</a>
+  <nav class="nav">
+    <a href="wh-dashboard.html" class="nav-btn active">🏠 Главная</a>
+    <a href="wh-catalog.html" class="nav-btn">🧾 Procurement</a>
+    <a href="wh-orders.html" class="nav-btn">🛒 Customer orders</a>
+    <a href="wh-demand.html" class="nav-btn">📈 Demand</a>
+  </nav>
+  <div class="topbar-right"><span id="user-name" class="user-name">—</span><button class="btn-logout" onclick="wholesalerSignOut()">Выйти</button></div>
+</header>
+<main class="container">
+  <h1>Stage 4 runtime (wholesaler)</h1>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+    <a class="panel" href="wh-catalog.html" style="text-decoration:none;color:inherit"><b>Procurement workspace</b><div style="color:var(--muted)">Stage 3 lifecycle</div></a>
+    <a class="panel" href="wh-orders.html" style="text-decoration:none;color:inherit"><b>Customer orders</b><div style="color:var(--muted)">Управление статусами и резервами</div></a>
+    <a class="panel" href="wh-demand.html" style="text-decoration:none;color:inherit"><b>Replenishment demand</b><div style="color:var(--muted)">Агрегированный спрос по продажам</div></a>
   </div>
-  <script src="../shared/wholesaler.js"></script>
-  <script>
-    wholesalerAuthGuard();
-  </script>
+</main>
+<script>
+(async()=>{await wholesalerAuthGuard();document.getElementById('auth-loading').style.display='none';})();
+</script>
 </body>
 </html>

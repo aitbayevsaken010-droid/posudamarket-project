@@ -1,45 +1,64 @@
-# Domain Model — Stage 3 Procurement + Receiving
+# Domain model (runtime-focused)
 
-## Canonical catalog base (unchanged)
-- `catalog_categories`
-- `catalog_products`
-- `catalog_product_variants`
-- `catalog_product_images`
-- `supplier_products`
+## Existing inventory core (Stage 3)
+- `wholesaler_inventory_items`
+  - `available_qty`, `reserved_qty`, `on_hand_qty`, `damaged_qty`
+- `inventory_movements`
+  - `procurement_received`, `damaged_on_receiving` (Stage 3)
 
-## Procurement runtime entities
-- `procurement_carts`
-- `procurement_cart_items`
-- `supplier_orders` (extended)
-  - `procurement_cart_id`, shipment/receipt metadata fields, timestamps.
-- `supplier_order_items` (extended)
-  - snapshots: article/title/units_per_box/price_per_box,
-  - requested/confirmed units,
-  - cumulative receiving totals.
-- `supplier_order_status_history`
+## Stage 4 customer order runtime entities
+- `customer_carts`
+  - one open cart per customer, bound to one wholesaler.
+- `customer_cart_items`
+  - unit-based quantities (`quantity > 0`) by `inventory_item_id`.
+- `customer_orders`
+  - lifecycle status, totals, cancellation metadata.
+- `customer_order_items`
+  - immutable line snapshot (qty + unit price + product identity).
+- `customer_order_status_history`
+  - persistent order status history with actor and metadata.
+- `stock_reservations`
+  - runtime reservation state machine:
+    - `active` (hold),
+    - `released` (cancel release),
+    - `finalized` (completed sale).
 
-## Receiving runtime entities
-- `supplier_order_receivings`
-- `supplier_order_receiving_items`
-- `supplier_order_damaged_goods` (prepared for explicit damaged ledger records)
+## Stage 4 replenishment demand runtime
+- `replenishment_demands`
+  - aggregate by `(wholesaler_id, product_id, variant_id)` and active status,
+  - tracks `sold_qty`, `sales_count`, `uncovered_qty`,
+  - computes `suggested_boxes`, `suggested_qty`, `pieces_per_box`.
+- `replenishment_demand_events`
+  - immutable event stream (`demand_opened`, `sale_finalized`, future coverage events).
 
-## Inventory bridge
-- `wholesaler_inventory_items` extended with:
-  - `on_hand_qty`,
-  - `last_received_at`.
-- `inventory_movements` uses new movement types:
-  - `procurement_received`,
-  - `damaged_on_receiving`,
-  - (plus existing `manual_adjustment`, legacy movement types).
+## Runtime functions introduced/used in Stage 4
+- Cart runtime:
+  - `pm_customer_cart_get_or_create`
+  - `pm_customer_cart_upsert_item`
+  - `pm_customer_cart_set_item_quantity`
+  - `pm_customer_cart_remove_item`
+- Checkout + reservation:
+  - `pm_checkout_customer_cart`
+- Order lifecycle / reservation release+finalize:
+  - `pm_set_customer_order_status`
+  - `pm_customer_order_apply_cancellation`
+  - `pm_customer_order_apply_completion`
+- Demand helper:
+  - `pm_estimate_units_per_box`
 
-## Status lifecycle (stage 3 runtime)
+## Lifecycle statuses
+`customer_order_status`:
 - `new`
-- `changed_by_supplier`
 - `confirmed`
 - `processing`
+- `ready_for_pickup`
 - `shipped`
-- `in_transit`
-- `received`
+- `completed`
 - `cancelled`
 
-Compatibility status values from foundation (`adjusted_by_supplier`, `shipment_proof_attached`, `completed`) remain allowed for backward compatibility.
+## Movement semantics after Stage 4
+- `procurement_received`: increases `available_qty` + `on_hand_qty`
+- `damaged_on_receiving`: increases `damaged_qty`
+- `reservation_hold`: decreases `available_qty`, increases `reserved_qty`
+- `reservation_release`: increases `available_qty`, decreases `reserved_qty`
+- `customer_sale`: decreases `reserved_qty` + `on_hand_qty`

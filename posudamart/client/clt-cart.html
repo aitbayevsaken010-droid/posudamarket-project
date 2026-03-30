@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Posudamart — Корзина</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="../shared/runtime-config.js"></script>
+  <script src="../shared/supabase-client.js"></script>
+  <script src="../shared/domain/constants.js"></script>
+  <script src="../shared/domain/access-control.js"></script>
+  <script src="../shared/domain/customer-orders.js"></script>
+  <script src="../shared/client.js"></script>
+  <link rel="stylesheet" href="../shared/client.css">
+</head>
+<body>
+<div id="auth-loading"><div class="spinner"></div></div>
+<div id="toast"></div>
+
+<header class="topbar">
+  <div class="brand-group">
+    <a href="clt-dashboard.html" class="brand"><div class="brand-dot"></div>Posudamart</a>
+    <span class="client-badge">🛒 Клиент</span>
+  </div>
+  <nav class="nav">
+    <a href="clt-dashboard.html" class="nav-btn">🏠 Главная</a>
+    <a href="clt-catalog.html" class="nav-btn">🛍 Каталог</a>
+    <a href="clt-cart.html" class="nav-btn active">🧺 Корзина</a>
+    <a href="clt-orders.html" class="nav-btn">📋 Заказы</a>
+  </nav>
+  <div class="topbar-right">
+    <span class="user-name" id="user-name">—</span>
+    <button class="btn-logout" onclick="signOut()">Выйти</button>
+  </div>
+</header>
+
+<main class="container">
+  <div class="page-head">
+    <h1>Корзина покупателя</h1>
+    <div style="display:flex;gap:8px">
+      <a class="btn" href="clt-catalog.html">Продолжить покупки</a>
+      <button class="btn btn-primary" id="checkout-btn" onclick="checkoutCart()">Оформить заказ</button>
+    </div>
+  </div>
+
+  <div class="panel" id="cart-items">Загрузка...</div>
+</main>
+
+<script>
+let cart = null;
+
+(async()=>{
+  try {
+    const profile = await authGuard();
+    if (!profile) return;
+    await loadCart();
+    document.getElementById('auth-loading').style.display = 'none';
+  } catch (err) {
+    console.error(err);
+    showFatalLoadError(err?.message || 'Не удалось загрузить корзину.', () => window.location.reload());
+  }
+})();
+
+async function loadCart() {
+  cart = await PM_CUSTOMER_ORDERS.getOpenCart(sb, currentUser.id);
+  renderCart();
+}
+
+function renderCart() {
+  const wrap = document.getElementById('cart-items');
+  const items = cart?.customer_cart_items || [];
+
+  if (!items.length) {
+    wrap.innerHTML = '<div class="empty"><div class="empty-icon">🧺</div>Корзина пуста</div>';
+    document.getElementById('checkout-btn').disabled = true;
+    return;
+  }
+
+  document.getElementById('checkout-btn').disabled = false;
+
+  let total = 0;
+  wrap.innerHTML = `
+    <div class="table-wrap" style="margin-bottom:14px">
+      <table>
+        <thead>
+          <tr><th>Товар</th><th>Доступно</th><th>Кол-во (шт)</th><th>Цена/шт</th><th>Сумма</th><th></th></tr>
+        </thead>
+        <tbody>
+          ${items.map((item) => {
+            const inv = item.wholesaler_inventory_items || {};
+            const prod = inv.catalog_products || {};
+            const qty = Number(item.quantity || 0);
+            const price = Number(inv.unit_sale_price || 0);
+            const rowTotal = qty * price;
+            total += rowTotal;
+            return `<tr>
+              <td><b>${esc(prod.name || '—')}</b><br><span style="color:var(--muted)">${esc(prod.article || '—')}</span></td>
+              <td>${Number(inv.available_qty || 0)} шт</td>
+              <td><input type="number" min="1" max="${Number(inv.available_qty || 0)}" value="${qty}" onchange="setItemQty('${item.inventory_item_id}', this.value)"></td>
+              <td>${price.toFixed(2)} ₸</td>
+              <td>${rowTotal.toFixed(2)} ₸</td>
+              <td><button class="btn btn-danger btn-sm" onclick="removeItem('${item.inventory_item_id}')">Удалить</button></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="font-size:16px;font-weight:800">Итого: ${total.toFixed(2)} ₸</div>
+      <div style="color:var(--muted)">Заказ создастся в статусе <b>Новый</b> и сразу зарезервирует остаток.</div>
+    </div>
+  `;
+}
+
+async function setItemQty(inventoryItemId, value) {
+  const qty = Number(value || 0);
+  try {
+    const res = await sb.rpc('pm_customer_cart_set_item_quantity', {
+      p_inventory_item_id: inventoryItemId,
+      p_quantity: qty,
+    });
+    if (res.error) throw res.error;
+    await loadCart();
+  } catch (err) {
+    showToast(err?.message || 'Не удалось обновить количество', false);
+    await loadCart();
+  }
+}
+
+async function removeItem(inventoryItemId) {
+  const res = await sb.rpc('pm_customer_cart_remove_item', { p_inventory_item_id: inventoryItemId });
+  if (res.error) {
+    showToast(res.error.message || 'Не удалось удалить позицию', false);
+    return;
+  }
+  await loadCart();
+}
+
+async function checkoutCart() {
+  if (!confirm('Оформить заказ и зарезервировать остаток?')) return;
+  const btn = document.getElementById('checkout-btn');
+  btn.disabled = true;
+  try {
+    const res = await sb.rpc('pm_checkout_customer_cart');
+    if (res.error) throw res.error;
+    showToast('Заказ создан, резерв установлен.');
+    window.location.href = `clt-orders.html?order_id=${res.data}`;
+  } catch (err) {
+    showToast(err?.message || 'Checkout не выполнен', false);
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
