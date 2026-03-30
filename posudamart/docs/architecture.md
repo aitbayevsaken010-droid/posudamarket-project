@@ -1,38 +1,32 @@
-# Architecture — Stage 1 Foundation
+# Architecture — Stage 2 Catalog Runtime
 
-## Current stack
-- Frontend: static HTML/CSS/JS pages.
-- Backend: Supabase Auth + Postgres + Storage.
-- Access control: client-side guards + DB/RLS-side policies (to be expanded in next stages).
+## Core principle
+Stage 2 switches product runtime from legacy flat tables (`products`, `categories`) to normalized catalog domain introduced in Stage 1 foundation.
 
-## Domain-oriented structure introduced
-- `shared/domain/constants.js` — single source of truth for enums/constants.
-- `shared/domain/access-control.js` — reusable access context and approval-aware role checks.
-- `shared/{admin, supplier, client, wholesaler}.js` — role-specific entry points using common access layer.
-- `sql/migrations/20260330_marketplace_foundation.sql` — normalized data model foundation.
+## Runtime layers
+- `shared/domain/catalog.js`
+  - input normalization (`article`, image URL, money),
+  - supplier mutation validation,
+  - role-aware guard for supplier mutations,
+  - mappers:
+    - supplier offerings -> wholesaler catalog DTO,
+    - wholesaler inventory -> customer catalog DTO.
+- Role entry points remain in `shared/{supplier,client,wholesaler,admin}.js`.
 
-## Domains mapped in foundation
-- auth
-- users/profiles
-- roles/approvals
-- catalog
-- supplier
-- wholesaler
-- customer
-- orders
-- inventory
-- replenishment
-- returns
-- admin
+## Data model usage
+- Write path (supplier):
+  1. validate payload,
+  2. upsert/find canonical `catalog_products` by normalized article,
+  3. write variants/images,
+  4. create/update `supplier_products`.
+- Read path (wholesaler): category-first browsing of active supplier offerings.
+- Read path (customer): category-first browsing of wholesaler inventory projection only.
+- Read path (admin): visibility into categories and supplier-owned offerings/status.
 
-## Stage 1 scope completed
-- Introduced strict target role model (`admin|supplier|wholesaler|customer`).
-- Added approval-aware access foundation.
-- Added schema skeleton and core links for all required business domains.
-- Added wholesaler role entry path and protected starter pages.
+## Derived unit price decision
+`derived_unit_price` is **stored generated** in DB (`supplier_products`) from `price_per_box / units_per_box`.
+Reason: keeps deterministic economics, avoids UI drift, and allows indexing/filtering in later procurement stages.
 
-## Out of scope for Stage 1
-- Full order lifecycles implementation.
-- Replenishment calculation engine and UI.
-- Goods receiving flow with defect handling UX.
-- Full returns workflow automation.
+## Legacy status
+- Legacy pages tied to `products/categories` are partially replaced for Stage 2 catalog pages.
+- Legacy order flows are preserved and intentionally not fully migrated in Stage 2.

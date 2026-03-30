@@ -1,27 +1,17 @@
-# Roadmap — Next Steps After Stage 1
+# Roadmap — Next Steps After Stage 2
 
-## Stage 2 (recommended)
-1. Migrate runtime writes from legacy entities to new normalized tables.
-2. Implement admin approval cabinet for both supplier and wholesaler requests (`role_approvals`).
-3. Add wholesaler onboarding profile form (city + warehouse + legal details).
-4. Align RLS policies with new role model and approval-aware access.
+## Stage 3 (recommended): procurement + receiving runtime
+1. Supplier order lifecycle on top of `supplier_products` (boxes only).
+2. Goods receiving (good/defect qty) -> `inventory_movements` and piece-level stock activation.
+3. Supplier selection UX for same canonical article from multiple suppliers.
+4. RLS hardening for catalog tables and projections per role.
 
-## Stage 3
-1. Implement supplier order confirmation negotiation flow (full/partial + return for wholesaler confirmation).
-2. Implement wholesaler goods receiving (actual qty, defect qty, defect photo).
-3. Activate piece-level inventory movement pipeline.
+## Stage 4: customer sales runtime
+1. Customer checkout flow from wholesaler inventory projection.
+2. Reservation/decrement/release engine for `wholesaler_inventory_items`.
+3. Customer order status pipeline and cancellation effects.
 
-## Stage 4
-1. Implement customer storefront from wholesaler inventory only.
-2. Immediate stock reservation/decrement on order placement.
-3. Stock return on cancellation.
-
-## Stage 5
-1. Implement replenishment demand engine and active queue rules:
-   - demand aggregate by product/variant only;
-   - visible after >3 sales events;
-   - round-up to full boxes;
-   - auto-close demand after covered procurement;
-   - preserve historical demand events.
-2. Implement returns workflows in both directions.
-3. Expand audit logs with key event emitters.
+## Stage 5: replenishment and returns
+1. Replenishment demand automation from sales + stock gaps.
+2. Wholesaler-to-supplier and customer-to-wholesaler returns workflows.
+3. Expanded audit logging for product/procurement/inventory critical actions.

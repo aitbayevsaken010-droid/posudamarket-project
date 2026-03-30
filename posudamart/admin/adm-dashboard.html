@@ -77,8 +77,8 @@ async function onAdminLoggedIn() {
 async function loadStats() {
   const [sup, cat, prod, ord] = await Promise.all([
     sb.from('suppliers').select('id', {count:'exact',head:true}).eq('status','active'),
-    sb.from('categories').select('id', {count:'exact',head:true}),
-    sb.from('products').select('id', {count:'exact',head:true}),
+    sb.from('catalog_categories').select('id', {count:'exact',head:true}),
+    sb.from('supplier_products').select('id', {count:'exact',head:true}),
     sb.from('orders').select('id', {count:'exact',head:true}).neq('status','Закрыт').eq('archived',false)
   ]);
   document.getElementById('stat-suppliers').textContent = sup.count ?? 0;

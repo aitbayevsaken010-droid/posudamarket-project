@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Оптовик — Каталог поставщиков</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="../shared/runtime-config.js"></script>
+  <script src="../shared/supabase-client.js"></script>
+  <script src="../shared/domain/constants.js"></script>
+  <script src="../shared/domain/access-control.js"></script>
+  <script src="../shared/domain/catalog.js"></script>
+  <script src="../shared/wholesaler.js"></script>
+  <style>body{font-family:Arial,sans-serif;background:#0f1117;color:#fff;margin:0;padding:20px}.panel{background:#181c27;border:1px solid #2a3045;border-radius:10px;padding:14px;margin-bottom:12px}.cat{cursor:pointer}.row{border-top:1px solid #2a3045;padding:8px 0}</style>
+</head>
+<body>
+  <h1>Каталог поставщиков (по категориям)</h1>
+  <p><a href="wh-dashboard.html" style="color:#9bb2ff">← Dashboard</a></p>
+  <div id="cats" class="panel">Загрузка...</div>
+  <div id="items"></div>
+<script>
+let categories=[]; let offerings=[];
+(async()=>{
+  const profile=await wholesalerAuthGuard();
+  if(!profile) return;
+  await load();
+})();
+
+async function load(){
+  const [catRes, supRes] = await Promise.all([
+    sb.from('catalog_categories').select('id,name').eq('is_active', true).order('name'),
+    sb.from('supplier_products').select(`id,supplier_user_id,units_per_box,price_per_box,derived_unit_price,is_active,
+      catalog_products!inner(id,name,article,description,is_active,category_id,catalog_categories(name),catalog_product_images(image_url,sort_order))`)
+      .eq('is_active', true)
+      .order('created_at',{ascending:false})
+  ]);
+  if(catRes.error) throw catRes.error;
+  if(supRes.error) throw supRes.error;
+  categories=catRes.data||[];
+  offerings=PM_CATALOG.mapSupplierRowsToWholesalerCatalog((supRes.data||[]).map(r=>({
+    ...r,
+    supplier_name:r.supplier_user_id,
+    category_id:r.catalog_products?.category_id,
+    category_name:r.catalog_products?.catalog_categories?.name,
+    product_id:r.catalog_products?.id,
+    article:r.catalog_products?.article,
+    product_name:r.catalog_products?.name,
+    description:r.catalog_products?.description,
+    image_url:r.catalog_products?.catalog_product_images?.[0]?.image_url,
+    product_active:r.catalog_products?.is_active,
+    supplier_product_active:r.is_active,
+    variants:[]
+  })));
+  renderCategories();
+}
+
+function renderCategories(){
+  const el=document.getElementById('cats');
+  el.innerHTML=categories.map(c=>`<div class="cat" onclick="openCategory('${c.id}')">📂 ${c.name}</div>`).join('')||'Категории не найдены';
+}
+
+function openCategory(categoryId){
+  const items=offerings.filter(x=>x.categoryId===categoryId);
+  const wrap=document.getElementById('items');
+  if(!items.length){wrap.innerHTML='<div class="panel">Нет активных предложений поставщиков в этой категории.</div>';return;}
+  wrap.innerHTML = `<div class="panel">`+items.map(i=>`<div class="row"><b>${i.name}</b> (${i.article})<br>${i.supplierName}<br>${i.pricePerBox.toFixed(2)} ₸/кор. · ${i.unitsPerBox} шт/кор. · ${i.derivedUnitPrice.toFixed(2)} ₸/шт.</div>`).join('')+`</div>`;
+}
+</script>
+</body>
+</html>
