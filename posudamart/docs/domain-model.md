@@ -1,30 +1,45 @@
-# Domain Model — Stage 2 Product/Catalog Runtime
+# Domain Model — Stage 3 Procurement + Receiving
 
-## What is runtime-active in Stage 2
+## Canonical catalog base (unchanged)
+- `catalog_categories`
+- `catalog_products`
+- `catalog_product_variants`
+- `catalog_product_images`
+- `supplier_products`
 
-### Canonical product catalog
-- `catalog_categories` — category tree/root categories for role-facing catalogs.
-- `catalog_products` — base товарная сущность с контролируемой идентичностью по `article`.
-- `catalog_product_variants` — варианты базового товара.
-- `catalog_product_images` — изображения товара/варианта.
+## Procurement runtime entities
+- `procurement_carts`
+- `procurement_cart_items`
+- `supplier_orders` (extended)
+  - `procurement_cart_id`, shipment/receipt metadata fields, timestamps.
+- `supplier_order_items` (extended)
+  - snapshots: article/title/units_per_box/price_per_box,
+  - requested/confirmed units,
+  - cumulative receiving totals.
+- `supplier_order_status_history`
 
-### Supplier offering layer
-- `supplier_products` — предложение поставщика поверх canonical product:
-  - supplier owner (`supplier_user_id`),
-  - supplier article (`supplier_article`),
-  - `units_per_box`,
-  - `price_per_box`,
-  - `derived_unit_price` (generated column),
-  - active/inactive status.
+## Receiving runtime entities
+- `supplier_order_receivings`
+- `supplier_order_receiving_items`
+- `supplier_order_damaged_goods` (prepared for explicit damaged ledger records)
 
-### Role-facing projections
-- **Wholesaler-facing catalog**: read model built from active `supplier_products` + canonical entities.
-- **Customer-facing catalog**: read model built from `wholesaler_inventory_items` + canonical entities (supplier catalog is not exposed directly).
+## Inventory bridge
+- `wholesaler_inventory_items` extended with:
+  - `on_hand_qty`,
+  - `last_received_at`.
+- `inventory_movements` uses new movement types:
+  - `procurement_received`,
+  - `damaged_on_receiving`,
+  - (plus existing `manual_adjustment`, legacy movement types).
 
-## Identity strategy
-- Canonical identity of товар = normalized `catalog_products.article`.
-- One article can have multiple supplier offerings through `supplier_products`.
+## Status lifecycle (stage 3 runtime)
+- `new`
+- `changed_by_supplier`
+- `confirmed`
+- `processing`
+- `shipped`
+- `in_transit`
+- `received`
+- `cancelled`
 
-## Stage 2 boundaries (explicitly not runtime here)
-- Full procurement flow (supplier order negotiation/receiving) — next stage.
-- Full customer checkout and reservation pipeline — next stage.
+Compatibility status values from foundation (`adjusted_by_supplier`, `shipment_proof_attached`, `completed`) remain allowed for backward compatibility.

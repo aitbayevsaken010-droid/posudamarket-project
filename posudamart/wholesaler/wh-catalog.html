@@ -3,67 +3,119 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Оптовик — Каталог поставщиков</title>
+  <title>Оптовик — Procurement</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="../shared/runtime-config.js"></script>
   <script src="../shared/supabase-client.js"></script>
   <script src="../shared/domain/constants.js"></script>
   <script src="../shared/domain/access-control.js"></script>
   <script src="../shared/domain/catalog.js"></script>
+  <script src="../shared/domain/procurement.js"></script>
   <script src="../shared/wholesaler.js"></script>
-  <style>body{font-family:Arial,sans-serif;background:#0f1117;color:#fff;margin:0;padding:20px}.panel{background:#181c27;border:1px solid #2a3045;border-radius:10px;padding:14px;margin-bottom:12px}.cat{cursor:pointer}.row{border-top:1px solid #2a3045;padding:8px 0}</style>
+  <style>body{font-family:Arial,sans-serif;background:#0f1117;color:#fff;margin:0;padding:18px}.panel{background:#181c27;border:1px solid #2a3045;border-radius:10px;padding:12px;margin-bottom:12px}.row{border-top:1px solid #2a3045;padding:8px 0}.btn{background:#4f6ef7;color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer}.btn.alt{background:#2a3045}.grid{display:grid;grid-template-columns:2fr 1fr;gap:12px}@media(max-width:960px){.grid{grid-template-columns:1fr}}</style>
 </head>
 <body>
-  <h1>Каталог поставщиков (по категориям)</h1>
+  <h1>Wholesaler Procurement Runtime</h1>
   <p><a href="wh-dashboard.html" style="color:#9bb2ff">← Dashboard</a></p>
-  <div id="cats" class="panel">Загрузка...</div>
-  <div id="items"></div>
+  <div class="grid">
+    <section>
+      <div class="panel"><h3>Supplier catalog</h3><div id="catalog">Загрузка...</div></div>
+      <div class="panel"><h3>Supplier orders</h3><div id="orders">Загрузка...</div></div>
+    </section>
+    <aside>
+      <div class="panel"><h3>Procurement cart</h3><div id="cart">Корзина пуста</div><button class="btn" id="checkout-btn" style="margin-top:8px">Submit cart</button></div>
+      <div class="panel"><h3>Receiving</h3><div id="receiving-box">Выберите order</div></div>
+    </aside>
+  </div>
 <script>
-let categories=[]; let offerings=[];
-(async()=>{
-  const profile=await wholesalerAuthGuard();
-  if(!profile) return;
-  await load();
-})();
+let wholesaler=null; let offerings=[]; let orders=[]; let cart=new Map(); let activeOrder=null;
+(async()=>{wholesaler=await wholesalerAuthGuard(); if(!wholesaler)return; await Promise.all([loadCatalog(), loadOrders()]); renderCart(); document.getElementById('checkout-btn').onclick=submitCart;})();
 
-async function load(){
-  const [catRes, supRes] = await Promise.all([
-    sb.from('catalog_categories').select('id,name').eq('is_active', true).order('name'),
-    sb.from('supplier_products').select(`id,supplier_user_id,units_per_box,price_per_box,derived_unit_price,is_active,
-      catalog_products!inner(id,name,article,description,is_active,category_id,catalog_categories(name),catalog_product_images(image_url,sort_order))`)
-      .eq('is_active', true)
-      .order('created_at',{ascending:false})
-  ]);
-  if(catRes.error) throw catRes.error;
-  if(supRes.error) throw supRes.error;
-  categories=catRes.data||[];
-  offerings=PM_CATALOG.mapSupplierRowsToWholesalerCatalog((supRes.data||[]).map(r=>({
-    ...r,
-    supplier_name:r.supplier_user_id,
-    category_id:r.catalog_products?.category_id,
-    category_name:r.catalog_products?.catalog_categories?.name,
-    product_id:r.catalog_products?.id,
-    article:r.catalog_products?.article,
-    product_name:r.catalog_products?.name,
-    description:r.catalog_products?.description,
-    image_url:r.catalog_products?.catalog_product_images?.[0]?.image_url,
-    product_active:r.catalog_products?.is_active,
-    supplier_product_active:r.is_active,
-    variants:[]
-  })));
-  renderCategories();
+function esc(v){const d=document.createElement('div');d.textContent=String(v??'');return d.innerHTML;}
+function money(v){return Number(v||0).toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₸';}
+
+async function loadCatalog(){
+  const supRes = await sb.from('supplier_products').select(`id,supplier_user_id,units_per_box,price_per_box,derived_unit_price,is_active,catalog_products!inner(id,name,article,description,is_active,category_id,catalog_categories(name))`).eq('is_active', true);
+  if (supRes.error) throw supRes.error;
+  offerings = PM_CATALOG.mapSupplierRowsToWholesalerCatalog((supRes.data||[]).map(r=>({...r,supplier_name:r.supplier_user_id,category_id:r.catalog_products?.category_id,category_name:r.catalog_products?.catalog_categories?.name,product_id:r.catalog_products?.id,article:r.catalog_products?.article,product_name:r.catalog_products?.name,description:r.catalog_products?.description,product_active:r.catalog_products?.is_active,supplier_product_active:r.is_active,variants:[]})));
+  renderCatalog();
 }
 
-function renderCategories(){
-  const el=document.getElementById('cats');
-  el.innerHTML=categories.map(c=>`<div class="cat" onclick="openCategory('${c.id}')">📂 ${c.name}</div>`).join('')||'Категории не найдены';
+function renderCatalog(){
+  const grouped = PM_PROCUREMENT.groupCatalogByCategory(offerings);
+  document.getElementById('catalog').innerHTML = grouped.map(g=>`<div class='row'><b>${esc(g.categoryName)}</b>${g.items.map(i=>`<div class='row'><b>${esc(i.name)}</b> (${esc(i.article)})<br><small>${money(i.pricePerBox)} / кор · ${i.unitsPerBox} шт/кор</small><br><input type='number' min='1' value='1' id='qty-${i.supplierProductId}' style='width:80px'> <button class='btn alt' onclick="addToCart('${i.supplierProductId}')">Добавить</button></div>`).join('')}</div>`).join('') || 'Пусто';
 }
 
-function openCategory(categoryId){
-  const items=offerings.filter(x=>x.categoryId===categoryId);
-  const wrap=document.getElementById('items');
-  if(!items.length){wrap.innerHTML='<div class="panel">Нет активных предложений поставщиков в этой категории.</div>';return;}
-  wrap.innerHTML = `<div class="panel">`+items.map(i=>`<div class="row"><b>${i.name}</b> (${i.article})<br>${i.supplierName}<br>${i.pricePerBox.toFixed(2)} ₸/кор. · ${i.unitsPerBox} шт/кор. · ${i.derivedUnitPrice.toFixed(2)} ₸/шт.</div>`).join('')+`</div>`;
+function addToCart(id){
+  const item=offerings.find(x=>x.supplierProductId===id); if(!item) return;
+  const qty=Math.max(1, Number(document.getElementById(`qty-${id}`).value||1));
+  const prev=cart.get(id);
+  cart.set(id,{supplier_product_id:id,requested_boxes:(prev?.requested_boxes||0)+qty,title:item.name,article:item.article,units_per_box:item.unitsPerBox,price_per_box:item.pricePerBox,supplier_user_id:item.supplierUserId});
+  renderCart();
+}
+
+function renderCart(){
+  const items=[...cart.values()];
+  document.getElementById('cart').innerHTML = items.length?items.map(i=>`<div class='row'>${esc(i.title)}<br>${i.requested_boxes} кор · ${money(i.price_per_box*i.requested_boxes)}<br><button class='btn alt' onclick="removeFromCart('${i.supplier_product_id}')">Удалить</button></div>`).join(''): 'Корзина пуста';
+}
+function removeFromCart(id){cart.delete(id);renderCart();}
+
+async function submitCart(){
+  const items=[...cart.values()];
+  if(!items.length) return alert('Корзина пуста');
+  try{
+    await PM_PROCUREMENT.submitCart(sb, items);
+    cart.clear(); renderCart();
+    await loadOrders();
+    alert('Заказы созданы и разделены по supplier.');
+  }catch(e){alert(e.message||'Ошибка submit cart');}
+}
+
+async function loadOrders(){
+  orders = await PM_PROCUREMENT.loadWholesalerOrders(sb, wholesaler.id);
+  renderOrders();
+}
+
+function statusLabel(status){return PM_PROCUREMENT.STATUS_LABELS[status] || status;}
+
+function renderOrders(){
+  document.getElementById('orders').innerHTML = orders.map(o=>`<div class='row'><b>${esc(o.id.slice(0,8))}</b> · ${statusLabel(o.status)} · ${money(o.totals.amount)}<br><small>items: ${o.supplier_order_items.length}</small><br><button class='btn alt' onclick="openOrder('${o.id}')">Details</button> ${o.status==='changed_by_supplier'?`<button class='btn' onclick="confirmChanged('${o.id}', true)">Confirm changes</button><button class='btn alt' onclick="confirmChanged('${o.id}', false)">Cancel</button>`:''}</div>`).join('') || 'Нет заказов';
+}
+
+function openOrder(id){activeOrder=orders.find(x=>x.id===id); renderReceiving();}
+
+async function confirmChanged(id, accept){
+  const note = accept ? 'Wholesaler accepted supplier changes' : 'Wholesaler cancelled changed order';
+  const res = await sb.rpc('pm_wholesaler_confirm_order',{p_order_id:id,p_accept:accept,p_note:note});
+  if(res.error) return alert(res.error.message);
+  await loadOrders();
+}
+
+function renderReceiving(){
+  if(!activeOrder){document.getElementById('receiving-box').innerHTML='Выберите order';return;}
+  const canReceive=['confirmed','processing','shipped','in_transit'].includes(activeOrder.status);
+  document.getElementById('receiving-box').innerHTML = `<div><b>Order ${esc(activeOrder.id.slice(0,8))}</b><br>${statusLabel(activeOrder.status)}</div>`+
+    activeOrder.supplier_order_items.map(it=>`<div class='row'><div>${esc(it.title_snapshot||it.article_snapshot)}</div><small>expected ${it.confirmed_units} units, received ${it.received_units_total}</small><br>received: <input id='rcv-${it.id}' type='number' min='0' value='0' style='width:80px'> damaged: <input id='dmg-${it.id}' type='number' min='0' value='0' style='width:80px'><br>damaged photo url: <input id='photo-${it.id}' placeholder='https://...' style='width:100%'><textarea id='note-${it.id}' placeholder='note' style='width:100%'></textarea></div>`).join('')+
+    `<textarea id='receiving-note' placeholder='Receipt note' style='width:100%'></textarea><input id='receipt-url' placeholder='Receipt attachment url' style='width:100%'><button class='btn' ${canReceive?'':'disabled'} onclick='submitReceiving()'>Close receiving</button>`;
+}
+
+async function submitReceiving(){
+  if(!activeOrder) return;
+  const items = activeOrder.supplier_order_items.map(it=>({
+    supplier_order_item_id: it.id,
+    received_units: Number(document.getElementById(`rcv-${it.id}`).value||0),
+    damaged_units: Number(document.getElementById(`dmg-${it.id}`).value||0),
+    note: document.getElementById(`note-${it.id}`).value || null,
+    damaged_attachment: { file_url: document.getElementById(`photo-${it.id}`).value || null }
+  }));
+  const receiptAttachment = { file_url: document.getElementById('receipt-url').value || null };
+  const note = document.getElementById('receiving-note').value || null;
+  const res = await sb.rpc('pm_wholesaler_receive_order',{p_order_id:activeOrder.id,p_items:items,p_note:note,p_receipt_attachment:receiptAttachment});
+  if(res.error) return alert(res.error.message);
+  alert('Receiving saved. Inventory updated.');
+  await loadOrders();
+  activeOrder = orders.find(x=>x.id===activeOrder.id) || null;
+  renderReceiving();
 }
 </script>
 </body>

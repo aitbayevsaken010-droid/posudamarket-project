@@ -1,4 +1,4 @@
-# Roles and Permissions — Stage 1 Foundation
+# Roles and Permissions — Stage 3 Runtime Rules
 
 ## Roles
 - `admin`
@@ -6,25 +6,27 @@
 - `wholesaler`
 - `customer`
 
-Legacy role `client` is normalized to `customer` in access layer for backward compatibility.
+## Procurement permissions (enforced in DB RPC)
 
-## One account = one role
-- The target model is fixed through app-level constants and DB enum `app_role`.
-- `profiles.role_new` introduced as strongly typed role column for migration to strict single-role profile.
+### Wholesaler
+- can create procurement orders only through `pm_submit_procurement_cart`.
+- can confirm/cancel changed supplier orders only for own `wholesaler_id`.
+- can perform receiving only for own orders (`pm_wholesaler_receive_order`).
 
-## Approval rules
-- `supplier`: manual admin approval required.
-- `wholesaler`: manual admin approval required.
-- `customer`: no manual approval required.
-- `admin`: operational role, no approval flow.
+### Supplier
+- can adjust quantities only for own incoming supplier orders.
+- cannot increase `confirmed_boxes` above `requested_boxes`.
+- can set logistics statuses (`processing`, `shipped`, `in_transit`) only for own orders.
 
-## Access foundation implemented
-- `PM_ACCESS.loadAccessContext()` loads role + approval context.
-- `PM_ACCESS.hasRouteAccess()` enforces role-based page entry.
-- `PM_ACCESS.canEnterBusinessSection()` blocks unapproved supplier/wholesaler access.
+### Admin
+- read visibility through admin UI page over supplier orders + receiving summaries.
+- no new admin mutation RPC added in Stage 3.
 
-## Current coverage
-- Admin pages: admin-only guard.
-- Supplier pages: supplier-only + approved-only.
-- Client/customer pages: customer role support (`customer` + legacy `client`).
-- Wholesaler pages: wholesaler-only + approved-only (foundation pages).
+## Validation highlights
+- `requested_boxes > 0`.
+- `confirmed_boxes >= 0` and `<= requested_boxes`.
+- `received_units >= 0`.
+- `damaged_units >= 0`.
+- `damaged_units <= received_units`.
+- receiving bounded by remaining confirmed units.
+- inventory quantities stay non-negative by table constraints and additive receiving updates.
