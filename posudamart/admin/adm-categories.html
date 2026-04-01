@@ -1,8 +1,124 @@
 <!DOCTYPE html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Admin — Категории</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="../shared/runtime-config.js"></script><script src="../shared/supabase-client.js"></script><script src="../shared/domain/constants.js"></script><script src="../shared/domain/access-control.js"></script><script src="../shared/admin.js"></script><link rel="stylesheet" href="../shared/admin.css"></head>
-<body><div id="auth-loading"><div class="spinner"></div></div><main class="container"><h1>Категории каталога</h1><div class="panel"><table><thead><tr><th>Категория</th><th>Статус</th><th>Товаров</th></tr></thead><tbody id="tb"></tbody></table></div></main>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin - Категории</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="../shared/runtime-config.js"></script>
+  <script src="../shared/supabase-client.js"></script>
+  <script src="../shared/domain/constants.js"></script>
+  <script src="../shared/domain/access-control.js"></script>
+  <script src="../shared/admin.js"></script>
+  <link rel="stylesheet" href="../shared/admin.css">
+</head>
+<body>
+<div id="auth-loading"><div class="spinner"></div></div>
+
+<header class="topbar" id="main-header" style="display:none">
+  <div class="brand-group">
+    <a href="adm-dashboard.html" class="brand"><div class="brand-dot"></div>Posudamart</a>
+    <span class="admin-badge">Админ</span>
+  </div>
+  <nav class="nav">
+    <a href="adm-dashboard.html" class="nav-btn">Главная</a>
+    <a href="adm-categories.html" class="nav-btn active">Категории</a>
+    <a href="adm-products.html" class="nav-btn">Товары</a>
+    <a href="adm-catalog.html" class="nav-btn">Каталог</a>
+  </nav>
+  <div class="topbar-right">
+    <span class="user-name" id="admin-email">-</span>
+    <button class="btn-logout" onclick="adminSignOut()">Выйти</button>
+  </div>
+</header>
+
+<main class="container" id="main-content" style="display:none">
+  <div class="page-head">
+    <h1>Категории каталога</h1>
+  </div>
+
+  <div class="panel" id="state-panel" style="display:none"></div>
+
+  <div class="panel">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Категория</th>
+            <th>Статус</th>
+            <th>Товаров</th>
+          </tr>
+        </thead>
+        <tbody id="tb">
+          <tr><td colspan="3">Загрузка...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
 <script>
-(async()=>{const a=await adminAuthGuard(); if(!a) return; const [c,p]=await Promise.all([sb.from('catalog_categories').select('id,name,is_active').order('name'),sb.from('catalog_products').select('id,category_id')]); if(c.error||p.error){document.getElementById('tb').innerHTML='<tr><td colspan="3">Ошибка загрузки</td></tr>';return;} const prods=p.data||[]; document.getElementById('tb').innerHTML=(c.data||[]).map(x=>`<tr><td>${x.name}</td><td>${x.is_active?'active':'inactive'}</td><td>${prods.filter(i=>i.category_id===x.id).length}</td></tr>`).join(''); document.getElementById('auth-loading').style.display='none';})();
-</script></body></html>
+function showState(message, tone = 'muted') {
+  const panel = document.getElementById('state-panel');
+  panel.style.display = '';
+  panel.style.color = tone === 'danger' ? 'var(--danger)' : 'var(--muted)';
+  panel.textContent = message;
+}
+
+async function loadCategoriesPage() {
+  const tbody = document.getElementById('tb');
+  const categoriesRes = await sb
+    .from('catalog_categories')
+    .select('id, name, is_active, sort_order')
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true });
+
+  if (categoriesRes.error) {
+    tbody.innerHTML = '<tr><td colspan="3">Каталог категорий пока недоступен в этой среде.</td></tr>';
+    showState(categoriesRes.error.message, 'danger');
+    return;
+  }
+
+  let productRows = [];
+  const productsRes = await sb
+    .from('catalog_products')
+    .select('id, category_id');
+
+  if (productsRes.error) {
+    showState('Счетчики товаров временно недоступны. Показываем только список категорий.');
+  } else {
+    productRows = productsRes.data || [];
+  }
+
+  const categories = categoriesRes.data || [];
+  if (!categories.length) {
+    tbody.innerHTML = '<tr><td colspan="3">Категории каталога пока не заполнены.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = categories.map((category) => {
+    const productCount = productRows.filter((product) => product.category_id === category.id).length;
+    return `
+      <tr>
+        <td><strong>${esc(category.name || 'Без названия')}</strong></td>
+        <td>${category.is_active ? 'active' : 'inactive'}</td>
+        <td>${productRows.length ? productCount : '—'}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+(async () => {
+  const admin = await adminAuthGuard();
+  if (!admin) return;
+  showAdminShell();
+  try {
+    await loadCategoriesPage();
+  } catch (error) {
+    document.getElementById('tb').innerHTML = '<tr><td colspan="3">Не удалось загрузить категории.</td></tr>';
+    showState(error?.message || 'Не удалось загрузить категории.', 'danger');
+  }
+})();
+</script>
+</body>
+</html>

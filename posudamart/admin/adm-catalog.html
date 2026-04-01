@@ -3,458 +3,154 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Admin — Каталог</title>
+  <title>Admin - Каталог</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="../shared/runtime-config.js"></script>
   <script src="../shared/supabase-client.js"></script>
   <script src="../shared/domain/constants.js"></script>
   <script src="../shared/domain/access-control.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="../shared/admin.js"></script>
   <link rel="stylesheet" href="../shared/admin.css">
   <style>
-    /* Catalog supplier tiles */
-    .sup-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px}
-    .sup-tile{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px 14px;cursor:pointer;text-align:center;transition:all .18s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;aspect-ratio:1/1;min-height:170px}
-    .sup-tile:hover{border-color:var(--accent);background:var(--surface2);transform:translateY(-2px);box-shadow:0 6px 20px rgba(79,110,247,.13)}
-    .sup-avatar{width:60px;height:60px;border-radius:14px;background:var(--accent-glow);border:1px solid rgba(79,110,247,.25);display:flex;align-items:center;justify-content:center;font-size:26px;overflow:hidden;flex-shrink:0}
-    .sup-avatar img{width:100%;height:100%;object-fit:cover;border-radius:14px;display:block}
-    .sup-tile-name{font-weight:700;font-size:13px;line-height:1.3}
-    .sup-tile-count{font-size:11px;color:var(--muted)}
-
-    /* Breadcrumb */
-    .breadcrumb{display:flex;align-items:center;gap:8px;margin-bottom:18px;font-size:13px;color:var(--muted)}
-    .breadcrumb-link{cursor:pointer;color:var(--accent);font-weight:600}
-    .breadcrumb-link:hover{text-decoration:underline}
-
-    /* Product photo grid */
-    .photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
-    .photo-item{position:relative;border-radius:12px;overflow:hidden;aspect-ratio:1/1;cursor:pointer;background:var(--surface2);transition:transform .18s,box-shadow .18s}
-    .photo-item:hover{transform:scale(1.04);box-shadow:0 6px 20px rgba(0,0,0,.35)}
-    .photo-item img{width:100%;height:100%;object-fit:cover;display:block}
-    .photo-no-img{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:42px;color:var(--border2)}
-    .photo-label{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.82));padding:22px 8px 8px;font-size:11px;font-weight:700;color:#fff;line-height:1.3}
-    .photo-label .price{font-size:10px;font-weight:400;color:rgba(255,255,255,.8);margin-top:2px}
-
-    /* Category section */
-    .cat-section{margin-bottom:28px}
-    .cat-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:8px}
-    .cat-title::before{content:'';width:3px;height:14px;background:var(--accent);border-radius:2px;flex-shrink:0}
-
-    /* Toolbar */
-    .cat-toolbar{display:flex;gap:10px;align-items:center;margin-bottom:20px;flex-wrap:wrap}
-    .cat-search{flex:1;min-width:180px;background:var(--bg);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);padding:9px 14px;outline:none;font-family:var(--font);font-size:14px;transition:border-color .15s}
-    .cat-search:focus{border-color:var(--accent)}
-
-    /* Quick order modal */
-    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);z-index:500;display:none;align-items:center;justify-content:center}
-    .modal-overlay.open{display:flex}
-    .quick-modal{background:var(--surface);border:1px solid var(--border2);border-radius:20px;width:min(360px,94vw);overflow:hidden;box-shadow:0 16px 64px rgba(0,0,0,.55)}
-    .quick-photo{width:100%;aspect-ratio:1/1;background:var(--surface2);position:relative;overflow:hidden;flex-shrink:0}
-    .quick-photo img{width:100%;height:100%;object-fit:cover;display:block}
-    .quick-photo-ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:64px;color:var(--border2)}
-    .quick-photo-label{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.85));padding:28px 16px 14px}
-    .quick-photo-name{font-size:18px;font-weight:800;color:#fff;line-height:1.2}
-    .quick-photo-sup{font-size:12px;color:rgba(255,255,255,.7);margin-top:3px}
-    .quick-body{padding:16px 18px;display:flex;flex-direction:column;gap:12px}
-    .quick-price-row{display:flex;justify-content:space-between;align-items:center;background:var(--surface2);border-radius:10px;padding:10px 14px}
-    .quick-price-label{font-size:12px;color:var(--muted)}
-    .quick-price-val{font-size:15px;font-weight:800;color:var(--accent);font-family:var(--mono)}
-    .quick-counter{display:flex;align-items:center;gap:0;flex:1;background:var(--bg);border:1px solid var(--border2);border-radius:10px;overflow:hidden}
-    .quick-counter-btn{width:44px;height:44px;border:none;background:transparent;color:var(--text);font-size:22px;cursor:pointer;flex-shrink:0;transition:background .1s}
-    .quick-counter-btn:hover{background:var(--surface2)}
-    .quick-counter-inp{flex:1;text-align:center;background:transparent;border:none;color:var(--text);font-size:18px;font-weight:700;font-family:var(--mono);outline:none;padding:0}
-    .quick-total{display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,rgba(79,110,247,.13),rgba(79,110,247,.06));border:1px solid rgba(79,110,247,.3);border-radius:10px;padding:12px 14px}
-    .quick-total-label{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
-    .quick-total-val{font-size:20px;font-weight:800;color:var(--accent);font-family:var(--mono)}
-    .quick-actions{display:flex;gap:8px}
-
-    @media(max-width:600px){
-      .photo-grid{grid-template-columns:repeat(3,1fr);gap:8px}
-      .sup-grid{grid-template-columns:repeat(2,1fr)}
-    }
-    @media(max-width:400px){
-      .photo-grid{grid-template-columns:repeat(2,1fr)}
-    }
-  
-</style>
-
+    .catalog-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+    .catalog-card{border:1px solid var(--border);border-radius:14px;padding:14px;background:var(--surface)}
+    .catalog-photo{width:100%;aspect-ratio:1/1;background:var(--surface2);border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;margin-bottom:10px}
+    .catalog-photo img{width:100%;height:100%;object-fit:cover;display:block}
+    .section-head{margin:18px 0 10px;font-size:13px;font-weight:800;text-transform:uppercase;color:var(--muted)}
+  </style>
 </head>
 <body>
-<div id="auth-loading" style="position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9998">
-  <div style="width:32px;height:32px;border:3px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite"></div>
-</div>
-<div id="toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:10px 22px;border-radius:30px;font-size:13px;font-weight:600;z-index:9999;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap"></div>
-
+<div id="auth-loading"><div class="spinner"></div></div>
 <header class="topbar" id="main-header" style="display:none">
   <div class="brand-group">
-    <a href="adm-dashboard.html" class="brand">
-      <div class="brand-dot"></div>Posudamart
-    </a>
-    <span class="admin-badge">👑 Админ</span>
+    <a href="adm-dashboard.html" class="brand"><div class="brand-dot"></div>Posudamart</a>
+    <span class="admin-badge">Админ</span>
   </div>
   <nav class="nav">
-    <a href="adm-dashboard.html" class="nav-btn">🏠 Главная</a>
-    <a href="adm-suppliers.html" class="nav-btn">🏭 Поставщики</a>
-    <a href="adm-categories.html" class="nav-btn">🗂 Категории</a>
-    <a href="adm-products.html" class="nav-btn">📦 Товары</a>
-    <a href="adm-catalog.html" class="nav-btn active">🛍 Каталог</a>
-    <a href="adm-orders.html" class="nav-btn">📋 Заказы</a>
-    <a href="adm-history.html" class="nav-btn">📅 История</a>
-    <a href="adm-profile.html" class="nav-btn">👤 Профиль</a>
+    <a href="adm-dashboard.html" class="nav-btn">Главная</a>
+    <a href="adm-catalog.html" class="nav-btn active">Каталог</a>
+    <a href="adm-products.html" class="nav-btn">Товары</a>
   </nav>
   <div class="topbar-right">
-    <span class="user-name" id="admin-email">—</span>
+    <span class="user-name" id="admin-email">-</span>
     <button class="btn-logout" onclick="adminSignOut()">Выйти</button>
   </div>
 </header>
 
 <main class="container" id="main-content" style="display:none">
   <div class="page-head">
-    <h1 id="page-title">Каталог товаров</h1>
+    <h1>Каталог товаров</h1>
+    <input type="text" id="catalog-search" placeholder="Поиск по названию или артикулу" style="max-width:280px">
   </div>
 
-  <div class="cat-toolbar">
-    <input type="text" class="cat-search" id="cat-search" placeholder="Поиск по названию, артикулу…">
-    <button class="btn btn-ghost" id="btn-reset-search" style="display:none">✕ Сбросить</button>
-  </div>
-
-  <div id="catalog-content">
-    <div class="empty"><div class="empty-icon">📦</div>Загрузка...</div>
-  </div>
+  <div class="panel" id="catalog-state" style="display:none"></div>
+  <div id="catalog-content" class="panel">Загрузка...</div>
 </main>
 
-<!-- Mobile nav -->
-<nav class="mob-nav">
-  <div class="mob-nav-inner">
-    <a href="adm-dashboard.html" class="mob-btn"><span class="ico">🏠</span>Главная</a>
-    <a href="adm-catalog.html" class="mob-btn active"><span class="ico">🛍</span>Каталог</a>
-    <a href="adm-orders.html" class="mob-btn"><span class="ico">📋</span>Заказы</a>
-    <a href="adm-profile.html" class="mob-btn"><span class="ico">👤</span>Профиль</a>
-  </div>
-</nav>
-
-<!-- Quick order modal -->
-<div class="modal-overlay" id="quick-modal">
-  <div class="quick-modal" style="display:flex;flex-direction:column;">
-    <div class="quick-photo" id="quick-photo-wrap">
-      <img id="quick-photo-img" src="" alt="" style="display:none">
-      <div class="quick-photo-ph" id="quick-photo-ph">📦</div>
-      <div class="quick-photo-label">
-        <div class="quick-photo-name" id="quick-name">—</div>
-        <div class="quick-photo-sup" id="quick-sup">—</div>
-      </div>
-    </div>
-    <div class="quick-body">
-      <div class="quick-price-row">
-        <span class="quick-price-label">Цена за коробку</span>
-        <span class="quick-price-val" id="quick-price">0 ₸</span>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px">
-        <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap">Коробок:</label>
-        <div class="quick-counter">
-          <button class="quick-counter-btn" id="quick-minus">−</button>
-          <input class="quick-counter-inp" id="quick-boxes" type="number" min="1" step="1" value="1">
-          <button class="quick-counter-btn" id="quick-plus">+</button>
-        </div>
-      </div>
-      <div class="quick-total">
-        <span class="quick-total-label">Итого</span>
-        <span class="quick-total-val" id="quick-total">0 ₸</span>
-      </div>
-      <div class="quick-actions">
-        <button class="btn btn-ghost" id="quick-cancel" style="flex:1;justify-content:center">Отмена</button>
-        <button class="btn btn-primary" id="quick-confirm" style="flex:2;justify-content:center;font-size:15px">+ В заказ</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script src="../shared/admin.js"></script>
 <script>
-let allSuppliers = [];
-let allProducts  = [];
-let allCategories = [];
-let allOrders    = [];
-let _activeSup   = null; // null = tiles view, supplier.id = products view
-let _quickProdId = null;
+let catalogCategories = [];
+let catalogProducts = [];
+let catalogImages = [];
 
-// ── INIT ──
-(async () => {
-  const user = await adminAuthGuard();
-  if (!user) return;
-  // showAdminShell() вызывается внутри adminAuthGuard после подтверждения сессии
-  // Для случая без кэша — показываем вручную
-  const header = document.getElementById('main-header');
-  const content = document.getElementById('main-content');
-  if (header) header.style.display = '';
-  if (content) content.style.display = '';
-  await loadAll();
-  renderCatalog();
-})();
-
-async function loadAll() {
-  const [supRes, prodRes, catRes, ordRes] = await Promise.all([
-    sb.from('suppliers').select('*').eq('status','active').order('name'),
-    sb.from('products').select('*').order('name'),
-    sb.from('categories').select('*').order('name'),
-    sb.from('orders').select('id,number,supplier_id,status,date,items').eq('archived', false).neq('status','Закрыт')
-  ]);
-  allSuppliers  = supRes.data  || [];
-  allProducts   = prodRes.data || [];
-  allCategories = catRes.data  || [];
-  allOrders     = ordRes.data  || [];
+function setCatalogState(message, tone = 'muted') {
+  const panel = document.getElementById('catalog-state');
+  panel.style.display = '';
+  panel.style.color = tone === 'danger' ? 'var(--danger)' : 'var(--muted)';
+  panel.textContent = message;
 }
 
-function getSupName(id) { return allSuppliers.find(s=>s.id===id)?.name || '—'; }
-function getCatName(id) { return allCategories.find(c=>c.id===id)?.name || '—'; }
-
-// ── SEARCH ──
-const searchInp = document.getElementById('cat-search');
-const resetBtn  = document.getElementById('btn-reset-search');
-searchInp.addEventListener('input', () => {
-  resetBtn.style.display = searchInp.value ? '' : 'none';
-  if (searchInp.value.trim()) {
-    _activeSup = null;
-    renderSearch(searchInp.value.trim().toLowerCase());
-  } else {
-    renderCatalog();
-  }
-});
-resetBtn.addEventListener('click', () => {
-  searchInp.value = ''; resetBtn.style.display = 'none';
-  _activeSup = null; renderCatalog();
-});
-
-function renderSearch(term) {
-  const found = allProducts.filter(p =>
-    [p.name, p.sku, p.note, getSupName(p.supplier_id), getCatName(p.category_id)]
-      .some(v => String(v||'').toLowerCase().includes(term))
-  );
-  const content = document.getElementById('catalog-content');
-  document.getElementById('page-title').textContent = `Найдено: ${found.length}`;
-  if (!found.length) { content.innerHTML = '<div class="empty"><div class="empty-icon">🔍</div>Ничего не найдено</div>'; return; }
-  content.innerHTML = `<div class="photo-grid">${found.map(p => productCard(p)).join('')}</div>`;
-  mountSafeImages(content);
+function getProductImage(productId) {
+  const imageRows = catalogImages.filter((image) => image.product_id === productId);
+  return imageRows.sort((left, right) => Number(left.sort_order || 0) - Number(right.sort_order || 0))[0] || null;
 }
 
-// ── CATALOG LEVELS ──
 function renderCatalog() {
-  document.getElementById('page-title').textContent = 'Каталог товаров';
-  if (!_activeSup) {
-    renderSupplierTiles();
-  } else {
-    renderSupplierProducts(_activeSup);
-  }
-}
-
-function renderSupplierTiles() {
   const content = document.getElementById('catalog-content');
-  const active = allSuppliers.filter(s => allProducts.some(p => p.supplier_id === s.id));
-  if (!active.length) { content.innerHTML = '<div class="empty"><div class="empty-icon">🏭</div>Нет активных поставщиков с товарами</div>'; return; }
-  content.innerHTML = `<div class="sup-grid">${active.map(s => {
-    const cnt = allProducts.filter(p => p.supplier_id === s.id).length;
-    const avatarInner = sanitizeImageUrl(s.logo||'')
-      ? `<span data-safe-image="${sanitizeImageUrl(s.logo||'')}" data-alt="${esc(s.name||'logo')}"></span>`
-      : s.name.charAt(0).toUpperCase();
-    return `<div class="sup-tile" onclick="openSupplier('${esc(s.id)}')">
-      <div class="sup-avatar">${avatarInner}</div>
-      <div class="sup-tile-name">${esc(s.name)}</div>
-      <div class="sup-tile-count">${cnt} товар${cnt===1?'':cnt<5?'а':'ов'}</div>
-    </div>`;
-  }).join('')}</div>`;
-  mountSafeImages(content);
-}
+  const term = String(document.getElementById('catalog-search').value || '').trim().toLowerCase();
 
-window.openSupplier = (supId) => {
-  _activeSup = supId;
-  if (!searchInp.value) renderSupplierProducts(supId);
-};
-
-function renderSupplierProducts(supId) {
-  const sup = allSuppliers.find(s => s.id === supId);
-  const products = allProducts.filter(p => p.supplier_id === supId).sort((a,b) => a.name.localeCompare(b.name,'ru'));
-  const content = document.getElementById('catalog-content');
-  document.getElementById('page-title').textContent = sup?.name || 'Товары';
-
-  const breadcrumb = `<div class="breadcrumb">
-    <span class="breadcrumb-link" onclick="backToSuppliers()">← Поставщики</span>
-    <span>·</span>
-    <span style="color:var(--text);font-weight:600">${esc(sup?.name||'')}</span>
-    <span style="color:var(--muted)">(${products.length})</span>
-  </div>`;
-
-  if (!products.length) { content.innerHTML = breadcrumb + '<div class="empty"><div class="empty-icon">📦</div>У этого поставщика нет товаров</div>'; return; }
-
-  // Group by category
-  const bycat = new Map();
-  products.forEach(p => {
-    const k = p.category_id || '__none__';
-    if (!bycat.has(k)) bycat.set(k,[]);
-    bycat.get(k).push(p);
-  });
-
-  let sections = '';
-  const categoryOrder = [...bycat.keys()].sort((a,b)=>{
-    const an = a === '__none__' ? 'яяя' : getCatName(a).toLowerCase();
-    const bn = b === '__none__' ? 'яяя' : getCatName(b).toLowerCase();
-    return an.localeCompare(bn,'ru');
-  });
-  categoryOrder.forEach((catId) => {
-    const items = bycat.get(catId) || [];
-    const catName = catId === '__none__' ? 'Без категории' : getCatName(catId);
-    sections += `<div class="cat-section">
-      <div class="cat-title">${esc(catName)} <span style="font-weight:400;font-size:11px">(${items.length})</span></div>
-      <div class="photo-grid">${items.map(p => productCard(p)).join('')}</div>
-    </div>`;
-  });
-
-  content.innerHTML = breadcrumb + sections;
-  mountSafeImages(content);
-}
-
-window.backToSuppliers = () => {
-  _activeSup = null;
-  document.getElementById('page-title').textContent = 'Каталог товаров';
-  renderSupplierTiles();
-};
-
-function productCard(p) {
-  const imgHtml = sanitizeImageUrl(p.photo||'')
-    ? `<span data-safe-image="${sanitizeImageUrl(p.photo||'')}" data-alt="${esc(p.name||'photo')}" data-loading="lazy"></span>`
-    : `<div class="photo-no-img">📦</div>`;
-  return `<div class="photo-item" onclick="openQuickOrder('${esc(p.id)}')">
-    ${imgHtml}
-    <div class="photo-label">
-      ${esc(p.name)}
-      <div class="price">${fmtMoney(p.box_price)} / кор.</div>
-    </div>
-  </div>`;
-}
-
-function mountSafeImages(root){
-  root.querySelectorAll('[data-safe-image]').forEach(host=>{
-    const safe=sanitizeImageUrl(host.dataset.safeImage||'');
-    if(!safe) return;
-    const img=document.createElement('img');
-    img.src=safe;
-    if(host.dataset.alt) img.alt=host.dataset.alt;
-    if(host.dataset.loading) img.loading=host.dataset.loading;
-    host.textContent='';
-    host.appendChild(img);
-  });
-}
-
-// ── QUICK ORDER MODAL ──
-window.openQuickOrder = (prodId) => {
-  const p = allProducts.find(x => x.id === prodId);
-  if (!p) return;
-  _quickProdId = prodId;
-
-  const img = document.getElementById('quick-photo-img');
-  const ph  = document.getElementById('quick-photo-ph');
-  const safePhoto=sanitizeImageUrl(p.photo||'');
-  if (safePhoto) { img.src = safePhoto; img.style.display = 'block'; ph.style.display = 'none'; }
-  else         { img.style.display = 'none'; ph.style.display = 'flex'; }
-
-  document.getElementById('quick-name').textContent = p.name;
-  document.getElementById('quick-sup').textContent  = getSupName(p.supplier_id);
-  document.getElementById('quick-price').textContent = fmtMoney(p.box_price) + ' / кор.';
-  document.getElementById('quick-boxes').value = '1';
-  updateQuickTotal();
-
-  document.getElementById('quick-modal').classList.add('open');
-  setTimeout(() => document.getElementById('quick-boxes').focus(), 60);
-};
-
-function updateQuickTotal() {
-  const p = allProducts.find(x => x.id === _quickProdId);
-  if (!p) return;
-  const boxes = Math.max(1, parseInt(document.getElementById('quick-boxes').value) || 1);
-  document.getElementById('quick-total').textContent = fmtMoney(p.box_price * boxes);
-}
-
-document.getElementById('quick-boxes').addEventListener('input', updateQuickTotal);
-document.getElementById('quick-minus').addEventListener('click', () => {
-  const inp = document.getElementById('quick-boxes');
-  inp.value = Math.max(1, (parseInt(inp.value)||1) - 1);
-  updateQuickTotal();
-});
-document.getElementById('quick-plus').addEventListener('click', () => {
-  const inp = document.getElementById('quick-boxes');
-  inp.value = (parseInt(inp.value)||1) + 1;
-  updateQuickTotal();
-});
-document.getElementById('quick-cancel').addEventListener('click', closeQuickModal);
-document.getElementById('quick-modal').addEventListener('click', e => { if (e.target.id==='quick-modal') closeQuickModal(); });
-
-function closeQuickModal() { document.getElementById('quick-modal').classList.remove('open'); }
-
-document.getElementById('quick-confirm').addEventListener('click', async () => {
-  const product = allProducts.find(x => x.id === _quickProdId);
-  if (!product) return;
-  const boxes = Math.max(1, parseInt(document.getElementById('quick-boxes').value) || 1);
-
-  const btn = document.getElementById('quick-confirm');
-  btn.disabled = true; btn.textContent = 'Добавляем...';
-
-  const newItem = {
-    rowId: uid(),
-    productId: product.id,
-    productName: product.name,
-    categoryName: getCatName(product.category_id),
-    boxes,
-    unitsPerBox: Number(product.units_per_box),
-    totalUnits: Number(product.units_per_box) * boxes,
-    boxPrice: Number(product.box_price),
-    unitPrice: product.units_per_box > 0 ? product.box_price / product.units_per_box : product.box_price,
-    totalPrice: Number(product.box_price) * boxes
-  };
-
-  // Find existing draft for this supplier
-  const existing = allOrders.find(o =>
-    o.status === 'Черновик' &&
-    o.supplier_id === product.supplier_id
-  );
-
-  let error;
-  if (existing) {
-    const items = [...(existing.items || [])];
-    const existItem = items.find(i => i.productId === product.id);
-    if (existItem) {
-      existItem.boxes += boxes;
-      existItem.totalUnits = existItem.boxes * existItem.unitsPerBox;
-      existItem.totalPrice = existItem.boxes * existItem.boxPrice;
-    } else {
-      items.push(newItem);
-    }
-    ({ error } = await sb.from('orders').update({ items, updated_at: new Date().toISOString() }).eq('id', existing.id));
-    if (!error) { existing.items = items; showToast(`✓ Добавлен в заказ #${existing.number}`); }
-  } else {
-    // Получаем следующий номер заказа из app_settings
-    const { data: settingData } = await sb.from('app_settings').select('value').eq('key','next_order_number').single();
-    const nextNum = Number(settingData?.value || 1);
-    const numStr = String(nextNum).padStart(4,'0');
-
-    const newOrder = {
-      id: uid(), number: numStr, supplier_id: product.supplier_id,
-      status: 'Черновик', date: new Date().toISOString().slice(0,10),
-      comment: getCatName(product.category_id), items: [newItem], archived: false
-    };
-    const { error: e1 } = await sb.from('orders').insert(newOrder);
-    if (!e1) {
-      await sb.from('app_settings').update({ value: String(nextNum+1) }).eq('key','next_order_number');
-      allOrders.push(newOrder);
-      showToast(`✓ Новый заказ #${numStr}`);
-    }
-    error = e1;
+  if (!catalogProducts.length && !catalogCategories.length) {
+    content.innerHTML = '<div class="empty"><div class="empty-icon">🛍</div>Каталог runtime пока недоступен.</div>';
+    return;
   }
 
-  btn.disabled = false; btn.textContent = '+ В заказ';
-  if (error) return showToast(error.message, false);
-  closeQuickModal();
-});
+  const filteredProducts = catalogProducts.filter((product) => {
+    if (!term) return true;
+    return `${product.name || ''} ${product.article || ''}`.toLowerCase().includes(term);
+  });
 
-function onAdminLoggedIn() { loadAll().then(renderCatalog); }
+  if (!filteredProducts.length) {
+    content.innerHTML = '<div class="empty"><div class="empty-icon">🔎</div>Ничего не найдено.</div>';
+    return;
+  }
+
+  const categoriesById = new Map(catalogCategories.map((category) => [category.id, category]));
+  const grouped = new Map();
+  filteredProducts.forEach((product) => {
+    const key = product.category_id || '__uncategorized__';
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(product);
+  });
+
+  const sections = [...grouped.entries()].map(([categoryId, products]) => {
+    const category = categoriesById.get(categoryId);
+    const title = categoryId === '__uncategorized__' ? 'Без категории' : (category?.name || 'Категория');
+    return `
+      <div class="section-head">${esc(title)} (${products.length})</div>
+      <div class="catalog-grid">
+        ${products.map((product) => {
+          const image = getProductImage(product.id);
+          const safeImage = sanitizeImageUrl(image?.image_url || '');
+          return `
+            <div class="catalog-card">
+              <div class="catalog-photo">
+                ${safeImage ? `<img src="${safeImage}" alt="${esc(product.name || 'photo')}">` : '<span style="color:var(--muted)">Нет фото</span>'}
+              </div>
+              <div style="font-weight:800">${esc(product.name || 'Без названия')}</div>
+              <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:4px">${esc(product.article || '—')}</div>
+              <div style="margin-top:8px;color:var(--muted);font-size:12px">Статус: ${product.is_active ? 'active' : 'inactive'}</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }).join('');
+
+  content.innerHTML = sections;
+}
+
+async function loadCatalogPage() {
+  const [categoriesRes, productsRes, imagesRes] = await Promise.all([
+    sb.from('catalog_categories').select('id, name, is_active, sort_order').order('sort_order', { ascending: true }).order('name', { ascending: true }),
+    sb.from('catalog_products').select('*').order('name', { ascending: true }),
+    sb.from('catalog_product_images').select('product_id, image_url, sort_order'),
+  ]);
+
+  catalogCategories = categoriesRes.error ? [] : (categoriesRes.data || []);
+  catalogProducts = productsRes.error ? [] : (productsRes.data || []);
+  catalogImages = imagesRes.error ? [] : (imagesRes.data || []);
+
+  if (categoriesRes.error && productsRes.error) {
+    setCatalogState('Новая catalog runtime модель пока недоступна. Страница переведена в safe catalog mode.', 'danger');
+  } else if (imagesRes.error) {
+    setCatalogState('Изображения каталога временно недоступны. Показываем каталог без фото.');
+  }
+
+  renderCatalog();
+}
+
+document.getElementById('catalog-search').addEventListener('input', renderCatalog);
+
+(async () => {
+  const admin = await adminAuthGuard();
+  if (!admin) return;
+  showAdminShell();
+  try {
+    await loadCatalogPage();
+  } catch (error) {
+    setCatalogState(error?.message || 'Не удалось загрузить каталог.', 'danger');
+    document.getElementById('catalog-content').innerHTML = '<div class="empty"><div class="empty-icon">🛍</div>Каталог временно недоступен.</div>';
+  }
+})();
 </script>
 </body>
 </html>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Admin — Товары</title>
+  <title>Admin - Товары</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="../shared/runtime-config.js"></script>
   <script src="../shared/supabase-client.js"></script>
@@ -14,28 +14,198 @@
 </head>
 <body>
 <div id="auth-loading"><div class="spinner"></div></div>
-<header class="topbar"><a href="adm-dashboard.html" class="brand">Posudamart Admin</a></header>
-<main class="container">
-  <h1>Каталог товаров (runtime model)</h1>
-  <div class="panel"><table><thead><tr><th>Товар</th><th>Артикул</th><th>Категория</th><th>Supplier owner</th><th>Статус</th><th>Цена/кор</th><th>Цена/шт</th></tr></thead><tbody id="tbody"><tr><td colspan="7">Загрузка...</td></tr></tbody></table></div>
+
+<header class="topbar" id="main-header" style="display:none">
+  <div class="brand-group">
+    <a href="adm-dashboard.html" class="brand"><div class="brand-dot"></div>Posudamart</a>
+    <span class="admin-badge">Админ</span>
+  </div>
+  <nav class="nav">
+    <a href="adm-dashboard.html" class="nav-btn">Главная</a>
+    <a href="adm-products.html" class="nav-btn active">Товары</a>
+    <a href="adm-categories.html" class="nav-btn">Категории</a>
+    <a href="adm-catalog.html" class="nav-btn">Каталог</a>
+  </nav>
+  <div class="topbar-right">
+    <span class="user-name" id="admin-email">-</span>
+    <button class="btn-logout" onclick="adminSignOut()">Выйти</button>
+  </div>
+</header>
+
+<main class="container" id="main-content" style="display:none">
+  <div class="page-head">
+    <h1>Каталог товаров</h1>
+  </div>
+
+  <div class="panel" id="schema-state" style="display:none"></div>
+
+  <div class="panel" id="unlinked-panel" style="display:none"></div>
+
+  <div class="panel">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Товар</th>
+            <th>Артикул</th>
+            <th>Категория</th>
+            <th>Supplier owner</th>
+            <th>Статус</th>
+            <th>Цена/кор</th>
+            <th>Цена/шт</th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          <tr><td colspan="7">Загрузка...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </main>
+
 <script>
-(async()=>{
-  const access=await adminAuthGuard(); if(!access) return;
-  const {data,error}=await sb.from('supplier_products').select(`id,is_active,price_per_box,derived_unit_price,supplier_user_id,
-    catalog_products!inner(name,article,is_active,catalog_categories(name))`).order('created_at',{ascending:false});
-  if(error){document.getElementById('tbody').innerHTML=`<tr><td colspan="7">${error.message}</td></tr>`;return;}
-  const rows=data||[];
-  document.getElementById('tbody').innerHTML=rows.map(r=>`<tr>
-    <td>${r.catalog_products?.name||'—'}</td>
-    <td>${r.catalog_products?.article||'—'}</td>
-    <td>${r.catalog_products?.catalog_categories?.name||'—'}</td>
-    <td>${r.supplier_user_id}</td>
-    <td>${(r.is_active && r.catalog_products?.is_active)?'active':'inactive'}</td>
-    <td>${Number(r.price_per_box||0).toFixed(2)}</td>
-    <td>${Number(r.derived_unit_price||0).toFixed(2)}</td>
-  </tr>`).join('') || '<tr><td colspan="7">Нет данных.</td></tr>';
-  document.getElementById('auth-loading').style.display='none';
+let catalogProducts = [];
+let catalogCategories = [];
+let supplierProducts = [];
+let suppliers = [];
+let supplierLinkState = 'ready';
+
+function setSchemaState(message, tone = 'muted') {
+  const panel = document.getElementById('schema-state');
+  panel.style.display = '';
+  panel.style.color = tone === 'danger' ? 'var(--danger)' : 'var(--muted)';
+  panel.textContent = message;
+}
+
+function buildCategoryMap() {
+  return new Map((catalogCategories || []).map((category) => [category.id, category.name]));
+}
+
+function buildSupplierNameMaps() {
+  return {
+    byId: new Map((suppliers || []).map((supplier) => [supplier.id, supplier.name])),
+    byUserId: new Map((suppliers || []).map((supplier) => [supplier.user_id, supplier.name])),
+  };
+}
+
+function getSupplierRuntimeRecord(productId) {
+  if (!productId) return null;
+  return (supplierProducts || []).find((row) => row.product_id === productId) || null;
+}
+
+function renderUnlinkedSupplierProducts(supplierNames) {
+  const panel = document.getElementById('unlinked-panel');
+  const unlinkedRows = (supplierProducts || []).filter((row) => !row.product_id || !catalogProducts.some((product) => product.id === row.product_id));
+  if (!unlinkedRows.length) {
+    panel.style.display = 'none';
+    panel.innerHTML = '';
+    return;
+  }
+
+  panel.style.display = '';
+  panel.innerHTML = `
+    <div class="panel-title">Непривязанные supplier_products</div>
+    <div style="color:var(--muted);margin-bottom:8px">Эти строки не связаны с catalog_products по product_id, поэтому показаны отдельно.</div>
+    ${unlinkedRows.map((row) => {
+      const supplierName = supplierNames.byUserId.get(row.supplier_user_id) || supplierNames.byId.get(row.supplier_id) || row.supplier_user_id || row.supplier_id || '—';
+      return `
+        <div style="border-top:1px solid var(--border);padding:8px 0">
+          <strong>${esc(row.name || 'Без названия')}</strong>
+          <div style="font-size:12px;color:var(--muted)">
+            article=${esc(row.article || '—')} · supplier=${esc(supplierName)} · product_id=${esc(row.product_id || '—')}
+          </div>
+        </div>
+      `;
+    }).join('')}
+  `;
+}
+
+function renderProducts() {
+  const tbody = document.getElementById('tbody');
+  const categoryMap = buildCategoryMap();
+  const supplierNames = buildSupplierNameMaps();
+
+  if (!catalogProducts.length) {
+    tbody.innerHTML = '<tr><td colspan="7">Каталог товаров пока пуст.</td></tr>';
+    renderUnlinkedSupplierProducts(supplierNames);
+    return;
+  }
+
+  tbody.innerHTML = catalogProducts.map((product) => {
+    const supplierProduct = getSupplierRuntimeRecord(product.id);
+    const supplierName = supplierProduct
+      ? (supplierNames.byUserId.get(supplierProduct.supplier_user_id) || supplierNames.byId.get(supplierProduct.supplier_id) || supplierProduct.supplier_user_id || supplierProduct.supplier_id || '—')
+      : '—';
+    const runtimeActive = supplierProduct ? Boolean(supplierProduct.is_active) : null;
+    const runtimeBoxPrice = supplierProduct ? Number(supplierProduct.price_per_box || 0) : null;
+    const runtimeUnitPrice = supplierProduct ? Number(supplierProduct.derived_unit_price || 0) : null;
+    const status = runtimeActive === null
+      ? (product.is_active ? 'catalog only' : 'inactive')
+      : ((runtimeActive && product.is_active) ? 'active' : 'inactive');
+
+    return `
+      <tr>
+        <td>${esc(product.name || '—')}</td>
+        <td>${esc(product.article || '—')}</td>
+        <td>${esc(categoryMap.get(product.category_id) || '—')}</td>
+        <td>${esc(supplierName)}</td>
+        <td>${status}</td>
+        <td>${runtimeBoxPrice === null ? '—' : runtimeBoxPrice.toFixed(2)}</td>
+        <td>${runtimeUnitPrice === null ? '—' : runtimeUnitPrice.toFixed(2)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  renderUnlinkedSupplierProducts(supplierNames);
+}
+
+async function loadProductsPage() {
+  const [catalogRes, categoriesRes, suppliersRes, supplierProductsRes] = await Promise.all([
+    sb.from('catalog_products').select('*').order('name', { ascending: true }),
+    sb.from('catalog_categories').select('id, name').order('name', { ascending: true }),
+    sb.from('suppliers').select('id, user_id, name').order('name', { ascending: true }),
+    sb.from('supplier_products').select('*').order('created_at', { ascending: false }),
+  ]);
+
+  if (catalogRes.error) {
+    document.getElementById('tbody').innerHTML = '<tr><td colspan="7">catalog_products пока недоступен. Страница переведена в safe mode.</td></tr>';
+    setSchemaState(catalogRes.error.message, 'danger');
+    return;
+  }
+
+  catalogProducts = catalogRes.data || [];
+  catalogCategories = categoriesRes.error ? [] : (categoriesRes.data || []);
+  suppliers = suppliersRes.error ? [] : (suppliersRes.data || []);
+
+  if (supplierProductsRes.error) {
+    supplierProducts = [];
+    supplierLinkState = 'missing_supplier_runtime';
+    setSchemaState('supplier_products пока не готов или недоступен. Показываем только catalog_products.');
+  } else {
+    supplierProducts = supplierProductsRes.data || [];
+    const hasProductLink = supplierProducts.some((row) => Object.prototype.hasOwnProperty.call(row, 'product_id'));
+    if (!hasProductLink && supplierProducts.length) {
+      supplierLinkState = 'missing_product_id';
+      setSchemaState('В supplier_products пока нет product_id. Связка с catalog_products показана в ограниченном режиме.');
+    } else if (!supplierProducts.length) {
+      supplierLinkState = 'empty_runtime';
+      setSchemaState('Supplier runtime еще не заполнен. Показываем только catalog_products.');
+    }
+  }
+
+  renderProducts();
+}
+
+(async () => {
+  const admin = await adminAuthGuard();
+  if (!admin) return;
+  showAdminShell();
+  try {
+    await loadProductsPage();
+  } catch (error) {
+    document.getElementById('tbody').innerHTML = '<tr><td colspan="7">Не удалось загрузить товары.</td></tr>';
+    setSchemaState(error?.message || 'Не удалось загрузить товары.', 'danger');
+  }
 })();
 </script>
 </body>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Admin — Поставщики</title>
+  <title>Admin - Поставщики</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="../shared/runtime-config.js"></script>
   <script src="../shared/supabase-client.js"></script>
@@ -22,20 +22,15 @@
 <header class="topbar" id="main-header" style="display:none">
   <div class="brand-group">
     <a href="adm-dashboard.html" class="brand"><div class="brand-dot"></div>Posudamart</a>
-    <span class="admin-badge">👑 Админ</span>
+    <span class="admin-badge">Админ</span>
   </div>
   <nav class="nav">
-    <a href="adm-dashboard.html" class="nav-btn">🏠 Главная</a>
-    <a href="adm-suppliers.html" class="nav-btn active">🏭 Поставщики</a>
-    <a href="adm-categories.html" class="nav-btn">🗂 Категории</a>
-    <a href="adm-products.html" class="nav-btn">📦 Товары</a>
-    <a href="adm-catalog.html" class="nav-btn">🛍 Каталог</a>
-    <a href="adm-orders.html" class="nav-btn">📋 Заказы</a>
-    <a href="adm-history.html" class="nav-btn">📅 История</a>
-    <a href="adm-profile.html" class="nav-btn">👤 Профиль</a>
+    <a href="adm-dashboard.html" class="nav-btn">Главная</a>
+    <a href="adm-suppliers.html" class="nav-btn active">Поставщики</a>
+    <a href="adm-products.html" class="nav-btn">Товары</a>
   </nav>
   <div class="topbar-right">
-    <span class="user-name" id="admin-email">—</span>
+    <span class="user-name" id="admin-email">-</span>
     <button class="btn-logout" onclick="adminSignOut()">Выйти</button>
   </div>
 </header>
@@ -49,27 +44,39 @@
         <option value="">Все статусы</option>
         <option value="active">Активные</option>
         <option value="pending">На проверке</option>
-        <option value="rejected">Отклонённые</option>
+        <option value="rejected">Отклоненные</option>
       </select>
       <button class="btn btn-primary" onclick="openEditSup('')">+ Добавить</button>
     </div>
   </div>
+
+  <div class="panel" id="suppliers-note" style="display:none"></div>
+
   <div class="panel">
     <div class="table-wrap">
       <table style="min-width:700px">
-        <thead><tr><th style="width:50px">Лого</th><th>Название</th><th>Телефон</th><th>WhatsApp</th><th>Статус</th><th>Товаров</th><th>Действия</th></tr></thead>
-        <tbody id="tbody"><tr><td colspan="8" class="empty">Загрузка...</td></tr></tbody>
+        <thead>
+          <tr>
+            <th style="width:50px">Лого</th>
+            <th>Название</th>
+            <th>Телефон</th>
+            <th>WhatsApp</th>
+            <th>Статус</th>
+            <th>Товаров</th>
+            <th>Действия</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"><tr><td colspan="7" class="empty">Загрузка...</td></tr></tbody>
       </table>
     </div>
   </div>
 </main>
 
-<!-- Supplier Edit Modal -->
 <div class="modal-backdrop" id="sup-modal">
   <div class="modal">
     <div class="modal-head">
       <div class="modal-title">Редактировать поставщика</div>
-      <button class="modal-close" data-close-sup>✕</button>
+      <button class="modal-close" data-close-sup>×</button>
     </div>
     <input type="hidden" id="sup-id">
     <div class="form-grid">
@@ -94,7 +101,7 @@
         <select id="sup-status">
           <option value="active">Активен</option>
           <option value="pending">На проверке</option>
-          <option value="rejected">Отклонён</option>
+          <option value="rejected">Отклонен</option>
         </select>
       </div>
       <div class="field">
@@ -104,7 +111,7 @@
       </div>
     </div>
     <div class="form-actions">
-      <button class="btn btn-primary" id="btn-save-sup">💾 Сохранить</button>
+      <button class="btn btn-primary" id="btn-save-sup">Сохранить</button>
       <button class="btn" data-close-sup>Отмена</button>
     </div>
   </div>
@@ -112,144 +119,180 @@
 
 <script src="../shared/admin.js"></script>
 <script>
+let suppliers = [];
+let products = [];
+let productStatsAvailable = false;
 
-let suppliers=[], products=[];
-
-async function onAdminLoggedIn() {
-  const [s,p]=await Promise.all([
-    sb.from('suppliers').select('*').order('name'),
-    sb.from('products').select('id,supplier_id')
-  ]);
-  suppliers=s.data||[]; products=p.data||[]; render();
-  sb.channel('rt-s').on('postgres_changes',{event:'*',schema:'public',table:'suppliers'},async()=>{
-    const{data}=await sb.from('suppliers').select('*').order('name');
-    suppliers=data||[]; render();
-  }).subscribe();
+function setNote(message) {
+  const note = document.getElementById('suppliers-note');
+  note.style.display = '';
+  note.style.color = 'var(--muted)';
+  note.textContent = message;
 }
 
-function statusBadgeLocal(st) {
-  if(st==='active') return '<span class="badge badge-active">Активен</span>';
-  if(st==='pending') return '<span class="badge badge-pending">На проверке</span>';
-  return '<span class="badge" style="background:rgba(239,68,68,0.12);color:var(--danger);border:1px solid rgba(239,68,68,0.25)">Отклонён</span>';
+function statusBadgeLocal(status) {
+  if (status === 'active') return '<span class="badge badge-active">Активен</span>';
+  if (status === 'pending') return '<span class="badge badge-pending">На проверке</span>';
+  return '<span class="badge" style="background:rgba(239,68,68,0.12);color:var(--danger);border:1px solid rgba(239,68,68,0.25)">Отклонен</span>';
+}
+
+async function onAdminLoggedIn() {
+  const suppliersRes = await sb.from('suppliers').select('*').order('name');
+  if (suppliersRes.error) {
+    document.getElementById('tbody').innerHTML = `<tr><td colspan="7" class="empty">${esc(suppliersRes.error.message)}</td></tr>`;
+    return;
+  }
+
+  suppliers = suppliersRes.data || [];
+
+  const productsRes = await sb.from('products').select('id, supplier_id');
+  if (productsRes.error) {
+    products = [];
+    productStatsAvailable = false;
+    setNote('Статистика legacy products временно недоступна. Показываем supplier list без счетчиков.');
+  } else {
+    products = productsRes.data || [];
+    productStatsAvailable = true;
+  }
+
+  render();
 }
 
 function render() {
-  const term=document.getElementById('search').value.toLowerCase();
-  const fSt=document.getElementById('filter-status').value;
-  const filtered=suppliers.filter(s=>(!term||s.name?.toLowerCase().includes(term)||s.phone?.includes(term))&&(!fSt||s.status===fSt));
-  document.getElementById('count').textContent=filtered.length;
-  const tbody=document.getElementById('tbody');
-  if(!filtered.length){tbody.innerHTML='<tr><td colspan="8" class="empty"><div class="empty-icon">🏭</div>Поставщики не найдены</td></tr>';return}
-  tbody.innerHTML=filtered.map(s=>{
-    const cnt=products.filter(p=>p.supplier_id===s.id).length;
-    const safeLogo=sanitizeImageUrl(s.logo||'');
-    const logo=safeLogo?`<span data-safe-image="${safeLogo}" data-alt="${esc(s.name||'logo')}"></span>`:'<div class="thumb-ph">🏭</div>';
-    return`<tr>
-      <td>${logo}</td>
-      <td><strong>${esc(s.name)}</strong><br><span style="font-size:11px;color:var(--muted)">${esc(s.address||'')}</span>${!s.user_id?'<br><span style="font-size:10px;color:var(--warning);font-weight:600">⚠ Нет аккаунта</span>':''}</td>
-      <td class="mono">${esc(s.phone||'—')}</td>
-      <td class="mono">${esc(s.whatsapp||'—')}</td>
-      <td>${statusBadgeLocal(s.status)}</td>
-      <td style="text-align:center">${cnt}</td>
-      <td><div class="row-actions">
-        <button class="btn btn-sm btn-ghost" onclick="openEditSup('${s.id}')">✏</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteSup('${s.id}')" ${cnt>0?'title="Есть товары"':''}>${cnt>0?'🔒':'✕'}</button>
-      </div></td>
-    </tr>`;
+  const term = (document.getElementById('search').value || '').toLowerCase();
+  const filterStatus = document.getElementById('filter-status').value;
+  const filtered = suppliers.filter((supplier) =>
+    (!term || supplier.name?.toLowerCase().includes(term) || supplier.phone?.includes(term)) &&
+    (!filterStatus || supplier.status === filterStatus)
+  );
+
+  document.getElementById('count').textContent = filtered.length;
+  const tbody = document.getElementById('tbody');
+
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty"><div class="empty-icon">🏭</div>Поставщики не найдены</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map((supplier) => {
+    const count = products.filter((product) => product.supplier_id === supplier.id).length;
+    const countText = productStatsAvailable ? String(count) : '—';
+    const safeLogo = sanitizeImageUrl(supplier.logo || '');
+    const logo = safeLogo
+      ? `<span data-safe-image="${safeLogo}" data-alt="${esc(supplier.name || 'logo')}"></span>`
+      : '<div class="thumb-ph">🏭</div>';
+    const canDelete = productStatsAvailable ? count === 0 : false;
+    return `
+      <tr>
+        <td>${logo}</td>
+        <td><strong>${esc(supplier.name)}</strong><br><span style="font-size:11px;color:var(--muted)">${esc(supplier.address || '')}</span></td>
+        <td class="mono">${esc(supplier.phone || '—')}</td>
+        <td class="mono">${esc(supplier.whatsapp || '—')}</td>
+        <td>${statusBadgeLocal(supplier.status)}</td>
+        <td style="text-align:center">${countText}</td>
+        <td>
+          <div class="row-actions">
+            <button class="btn btn-sm btn-ghost" onclick="openEditSup('${supplier.id}')">✏</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteSup('${supplier.id}')" ${canDelete ? '' : 'disabled'} title="${canDelete ? 'Удалить' : 'Удаление заблокировано, пока статистика недоступна или есть товары'}">${canDelete ? '×' : '🔒'}</button>
+          </div>
+        </td>
+      </tr>
+    `;
   }).join('');
-  tbody.querySelectorAll('[data-safe-image]').forEach(host=>{
-    const img=document.createElement('img');
-    img.className='thumb';
-    img.src=host.dataset.safeImage;
-    if(host.dataset.alt) img.alt=host.dataset.alt;
-    host.textContent='';
+
+  tbody.querySelectorAll('[data-safe-image]').forEach((host) => {
+    const img = document.createElement('img');
+    img.className = 'thumb';
+    img.src = host.dataset.safeImage;
+    if (host.dataset.alt) img.alt = host.dataset.alt;
+    host.textContent = '';
     host.appendChild(img);
   });
 }
 
-// ── Moderate ──
-async function moderate(id, status) {
-  if(!confirm(status==='active'?'Одобрить поставщика?':'Отклонить поставщика?'))return;
-  const{error}=await sb.from('suppliers').update({status}).eq('id',id);
-  if(error)return showToast(error.message,false);
-  showToast(status==='active'?'✓ Одобрен':'✕ Отклонён');
-  const{data}=await sb.from('suppliers').select('*').order('name');
-  suppliers=data||[]; render();
-}
-
-// ── Edit Modal ──
 function openEditSup(id) {
-  const s=suppliers.find(x=>x.id===id)||{};
-  document.getElementById('sup-id').value=s.id||'';
-  document.getElementById('sup-name').value=s.name||'';
-  document.getElementById('sup-phone').value=s.phone||'';
-  document.getElementById('sup-whatsapp').value=s.whatsapp||'';
-  document.getElementById('sup-address').value=s.address||'';
-  document.getElementById('sup-status').value=s.status||'active';
-  document.getElementById('sup-logo-preview').src=s.logo||'';
-  document.getElementById('sup-logo-preview').style.display=s.logo?'block':'none';
+  const supplier = suppliers.find((item) => item.id === id) || {};
+  document.getElementById('sup-id').value = supplier.id || '';
+  document.getElementById('sup-name').value = supplier.name || '';
+  document.getElementById('sup-phone').value = supplier.phone || '';
+  document.getElementById('sup-whatsapp').value = supplier.whatsapp || '';
+  document.getElementById('sup-address').value = supplier.address || '';
+  document.getElementById('sup-status').value = supplier.status || 'active';
+  document.getElementById('sup-logo-preview').src = supplier.logo || '';
+  document.getElementById('sup-logo-preview').style.display = supplier.logo ? 'block' : 'none';
   document.getElementById('sup-modal').classList.add('open');
 }
 
-function closeSup(){document.getElementById('sup-modal').classList.remove('open')}
+function closeSup() {
+  document.getElementById('sup-modal').classList.remove('open');
+}
 
-document.getElementById('sup-logo-file').addEventListener('change',async e=>{
-  const f=e.target.files[0]; if(!f) return;
-  const b64=await resizeImage(f,600);
-  document.getElementById('sup-logo-preview').src=b64;
-  document.getElementById('sup-logo-preview').style.display='block';
+document.getElementById('sup-logo-file').addEventListener('change', async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  const base64 = await resizeImage(file, 600);
+  document.getElementById('sup-logo-preview').src = base64;
+  document.getElementById('sup-logo-preview').style.display = 'block';
 });
 
-document.getElementById('btn-save-sup').addEventListener('click',async()=>{
-  const id=document.getElementById('sup-id').value;
-  const name=document.getElementById('sup-name').value.trim();
-  if(!name)return showToast('Введи название',false);
-  const logo=document.getElementById('sup-logo-preview').src;
-  const payload={
+document.getElementById('btn-save-sup').addEventListener('click', async () => {
+  const id = document.getElementById('sup-id').value;
+  const name = document.getElementById('sup-name').value.trim();
+  if (!name) return showToast('Введите название', false);
+
+  const logo = document.getElementById('sup-logo-preview').src;
+  const payload = {
     name,
-    phone:document.getElementById('sup-phone').value.trim(),
-    whatsapp:document.getElementById('sup-whatsapp').value.trim(),
-    address:document.getElementById('sup-address').value.trim(),
-    status:document.getElementById('sup-status').value,
-    logo:logo&&logo!==window.location.href?logo:undefined
+    phone: document.getElementById('sup-phone').value.trim(),
+    whatsapp: document.getElementById('sup-whatsapp').value.trim(),
+    address: document.getElementById('sup-address').value.trim(),
+    status: document.getElementById('sup-status').value,
+    logo: logo && logo !== window.location.href ? logo : undefined,
   };
-  Object.keys(payload).forEach(k=>payload[k]===undefined&&delete payload[k]);
-  const{error}=id
-    ?await sb.from('suppliers').update(payload).eq('id',id)
-    :await sb.from('suppliers').insert({...payload,id:crypto.randomUUID()});
-  if(error)return showToast(error.message,false);
+
+  Object.keys(payload).forEach((key) => payload[key] === undefined && delete payload[key]);
+
+  const result = id
+    ? await sb.from('suppliers').update(payload).eq('id', id)
+    : await sb.from('suppliers').insert({ ...payload, id: crypto.randomUUID() });
+
+  if (result.error) return showToast(result.error.message, false);
   closeSup();
-  const{data}=await sb.from('suppliers').select('*').order('name');
-  suppliers=data||[]; render();
-  showToast(id?'✓ Сохранено':'✓ Добавлен поставщик');
+  await onAdminLoggedIn();
+  showToast(id ? 'Сохранено' : 'Добавлен поставщик');
 });
 
 async function deleteSup(id) {
-  const s=suppliers.find(x=>x.id===id);
-  const cnt=products.filter(p=>p.supplier_id===id).length;
-  if(cnt>0)return showToast(`Нельзя удалить: ${cnt} товаров привязано`,false);
-  if(!confirm(`Удалить "${s?.name}"? Это действие необратимо.`))return;
-  const{error}=await sb.from('suppliers').delete().eq('id',id);
-  if(error)return showToast(error.message,false);
-  suppliers=suppliers.filter(x=>x.id!==id); render();
-  showToast('✓ Удалён');
+  const supplier = suppliers.find((item) => item.id === id);
+  if (!productStatsAvailable) {
+    showToast('Удаление отключено, пока статистика товаров недоступна.', false);
+    return;
+  }
+  const count = products.filter((product) => product.supplier_id === id).length;
+  if (count > 0) {
+    showToast(`Нельзя удалить: привязано товаров ${count}`, false);
+    return;
+  }
+  if (!confirm(`Удалить "${supplier?.name}"?`)) return;
+  const result = await sb.from('suppliers').delete().eq('id', id);
+  if (result.error) return showToast(result.error.message, false);
+  await onAdminLoggedIn();
+  showToast('Удален');
 }
 
-document.getElementById('search').addEventListener('input',render);
-document.getElementById('filter-status').addEventListener('change',render);
-document.querySelector('[data-close-sup]').addEventListener('click',closeSup);
-document.getElementById('sup-modal').addEventListener('click',e=>{if(e.target===document.getElementById('sup-modal'))closeSup()});
+document.getElementById('search').addEventListener('input', render);
+document.getElementById('filter-status').addEventListener('change', render);
+document.querySelectorAll('[data-close-sup]').forEach((button) => button.addEventListener('click', closeSup));
+document.getElementById('sup-modal').addEventListener('click', (event) => {
+  if (event.target === document.getElementById('sup-modal')) closeSup();
+});
 
-// Auto-run auth check
 (async () => {
-  const user = await adminAuthGuard();
-  if (user) {
-    document.getElementById('main-header').style.display = '';
-    document.getElementById('main-content').style.display = '';
-    if (typeof onAdminLoggedIn === 'function') await onAdminLoggedIn();
-  }
+  const admin = await adminAuthGuard();
+  if (!admin) return;
+  showAdminShell();
+  await onAdminLoggedIn();
 })();
-</script>
 </script>
 </body>
 </html>
