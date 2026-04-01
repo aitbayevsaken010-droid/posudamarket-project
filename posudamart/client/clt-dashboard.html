@@ -49,13 +49,10 @@
     if (!profile) return;
     document.getElementById('welcome-title').textContent = `Привет, ${profile.full_name || currentUser?.email || 'клиент'}!`;
 
-    const [ordersRes, cartRes] = await Promise.all([
-      sb.from('customer_orders').select('id,status,total_amount,created_at').eq('customer_user_id', currentUser.id).order('created_at', { ascending: false }),
+    const [orders, cartRes] = await Promise.all([
+      PM_CUSTOMER_ORDERS.loadCustomerOrders(sb, currentUser.id),
       PM_CUSTOMER_ORDERS.getOpenCart(sb, currentUser.id),
     ]);
-    if (ordersRes.error) throw ordersRes.error;
-
-    const orders = ordersRes.data || [];
     const active = orders.filter((o) => PM_CUSTOMER_ORDERS.ACTIVE_STATUSES.includes(o.status)).length;
     const completed = orders.filter((o) => o.status === 'completed').length;
     const cartUnits = (cartRes?.customer_cart_items || []).reduce((sum, i) => sum + Number(i.quantity || 0), 0);
@@ -66,7 +63,7 @@
 
     const recent = orders.slice(0, 5);
     document.getElementById('recent-orders').innerHTML = recent.length
-      ? `<div class="panel-title">Последние customer-заказы</div><div class="table-wrap"><table><thead><tr><th>Номер</th><th>Дата</th><th>Статус</th><th>Сумма</th></tr></thead><tbody>${recent.map((o)=>`<tr><td>${PM_CUSTOMER_ORDERS.formatOrderNumber(o.id)}</td><td>${new Date(o.created_at).toLocaleDateString('ru-RU')}</td><td>${PM_CUSTOMER_ORDERS.statusBadge(o.status)}</td><td>${Number(o.total_amount || 0).toFixed(2)} ₸</td></tr>`).join('')}</tbody></table></div>`
+      ? `<div class="panel-title">Последние customer-заказы</div><div class="table-wrap"><table><thead><tr><th>Номер</th><th>Дата</th><th>Статус</th><th>Сумма</th></tr></thead><tbody>${recent.map((o)=>`<tr><td>${PM_CUSTOMER_ORDERS.formatOrderNumber(o)}</td><td>${new Date(o.created_at).toLocaleDateString('ru-RU')}</td><td>${PM_CUSTOMER_ORDERS.statusBadge(o.status)}</td><td>${Number(o.total_amount || 0).toFixed(2)} ₸</td></tr>`).join('')}</tbody></table></div>`
       : '<div class="empty"><div class="empty-icon">📋</div>Заказов пока нет</div>';
 
     document.getElementById('auth-loading').style.display = 'none';

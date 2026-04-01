@@ -34,6 +34,8 @@
 let orders=[];
 let items=[];
 let customerMap=new Map();
+let pendingOrders=new Set();
+let orderErrors=new Map();
 
 function toast(msg, ok=true){
   const t=document.getElementById('toast');
@@ -57,35 +59,31 @@ function toast(msg, ok=true){
 })();
 
 async function loadOrders(wholesalerId){
-  const [ordersRes, itemsRes, customerRes] = await Promise.all([
-    sb.from('customer_orders').select('id,customer_user_id,status,total_amount,created_at,updated_at,cancellation_reason').eq('wholesaler_id', wholesalerId).order('created_at',{ascending:false}),
-    sb.from('customer_order_items').select('id,order_id,quantity,unit_price,catalog_products(name,article)').order('created_at',{ascending:false}),
+  const [ordersData, customerRes] = await Promise.all([
+    PM_CUSTOMER_ORDERS.loadWholesalerOrders(sb, wholesalerId),
     sb.from('profiles').select('id,full_name')
   ]);
-  if (ordersRes.error) throw ordersRes.error;
-  if (itemsRes.error) throw itemsRes.error;
   if (customerRes.error) throw customerRes.error;
 
-  orders=ordersRes.data||[];
+  orders=ordersData||[];
   const ids=new Set(orders.map(o=>o.id));
-  items=(itemsRes.data||[]).filter(i=>ids.has(i.order_id));
+  items=await PM_CUSTOMER_ORDERS.loadOrderItems(sb, [...ids]);
   customerMap=new Map((customerRes.data||[]).map(p=>[p.id,p]));
   render();
 }
 
-function transitions(status){
-  if(status==='new') return ['confirmed','processing','cancelled'];
-  if(status==='confirmed') return ['processing','ready_for_pickup','shipped','cancelled'];
-  if(status==='processing') return ['ready_for_pickup','shipped','cancelled'];
-  if(status==='ready_for_pickup'||status==='shipped') return ['completed','cancelled'];
-  return [];
+function availableActions(status){
+  const actions=[];
+  if(status==='new'||status==='confirmed') actions.push('cancel');
+  if(status==='ready_for_pickup'||status==='shipped') actions.push('complete');
+  return actions;
 }
 
 function render(){
   const term=(document.getElementById('search').value||'').toLowerCase().trim();
   const filtered=orders.filter(o=>{
-    const n=PM_CUSTOMER_ORDERS.formatOrderNumber(o.id).toLowerCase();
-    const hitItems=items.filter(i=>i.order_id===o.id).some(i=>`${i.catalog_products?.name||''} ${i.catalog_products?.article||''}`.toLowerCase().includes(term));
+    const n=PM_CUSTOMER_ORDERS.formatOrderNumber(o).toLowerCase();
+    const hitItems=items.filter(i=>i.order_id===o.id).some(i=>`${i.title||''} ${i.article||''}`.toLowerCase().includes(term));
     return !term||n.includes(term)||hitItems;
   });
   const container=document.getElementById('orders');
@@ -94,31 +92,64 @@ function render(){
   container.innerHTML=filtered.map(o=>{
     const orderItems=items.filter(i=>i.order_id===o.id);
     const customer=customerMap.get(o.customer_user_id);
-    const buttons=transitions(o.status).map(s=>`<button class='btn btn-sm' onclick="changeStatus('${o.id}','${s}')">${PM_CUSTOMER_ORDERS.statusLabel(s)}</button>`).join(' ');
+    const actions=availableActions(o.status);
+    const isPending=pendingOrders.has(o.id);
+    const errorText=orderErrors.get(o.id)||'';
+    const buttons=actions.map(action=>{
+      if(action==='cancel'){
+        return `<button class='btn btn-danger btn-sm' onclick="cancelOrder('${o.id}')" ${isPending?'disabled':''}>${isPending?'Выполняется...':'Отменить'}</button>`;
+      }
+      return `<button class='btn btn-sm' onclick="completeOrder('${o.id}')" ${isPending?'disabled':''}>${isPending?'Выполняется...':'Завершить'}</button>`;
+    }).join(' ');
     return `<div style='border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px'>
       <div style='display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap'>
-        <div><b>${PM_CUSTOMER_ORDERS.formatOrderNumber(o.id)}</b><div style='color:var(--muted);font-size:12px'>Клиент: ${customer?.full_name||o.customer_user_id}</div></div>
+        <div><b>${PM_CUSTOMER_ORDERS.formatOrderNumber(o)}</b><div style='color:var(--muted);font-size:12px'>Клиент: ${customer?.full_name||o.customer_user_id}</div></div>
         <div style='display:flex;gap:10px;align-items:center'>${PM_CUSTOMER_ORDERS.statusBadge(o.status)}<b>${Number(o.total_amount||0).toFixed(2)} ₸</b></div>
       </div>
-      <div style='margin-top:8px'>${orderItems.map(i=>`<div style='font-size:13px'>• ${i.catalog_products?.name||'—'} (${i.catalog_products?.article||'—'}) — ${Number(i.quantity||0)} шт</div>`).join('')}</div>
+      <div style='margin-top:8px'>${orderItems.map(i=>`<div style='font-size:13px'>• ${i.title||'—'} (${i.article||'—'}) — ${Number(i.quantity||0)} шт</div>`).join('')}</div>
       ${o.cancellation_reason?`<div style='color:var(--danger);margin-top:6px'>Причина: ${o.cancellation_reason}</div>`:''}
+      ${errorText?`<div style='color:var(--danger);margin-top:6px'>${errorText}</div>`:''}
       <div style='display:flex;gap:6px;flex-wrap:wrap;margin-top:10px'>${buttons||'<span style="color:var(--muted)">Финальный статус</span>'}</div>
     </div>`;
   }).join('');
 }
 
-async function changeStatus(orderId, status){
-  const note = status==='cancelled' ? prompt('Причина отмены заказа', 'Cancelled by wholesaler') : `Set to ${status}`;
-  if(status==='cancelled' && !note) return;
+async function cancelOrder(orderId){
+  if(pendingOrders.has(orderId)) return;
+  if(!confirm('Отменить заказ?')) return;
+  pendingOrders.add(orderId);
+  orderErrors.delete(orderId);
+  render();
+  try{
+    await PM_CUSTOMER_ORDERS.cancelOrder(sb, orderId);
+    toast('Заказ отменён');
+    await loadOrders(currentWholesalerProfile.id);
+  }catch(err){
+    orderErrors.set(orderId, err?.message || 'Отмена не выполнена');
+    toast(err?.message || 'Отмена не выполнена', false);
+  }finally{
+    pendingOrders.delete(orderId);
+    render();
+  }
+}
 
-  const res = await sb.rpc('pm_set_customer_order_status', {
-    p_order_id: orderId,
-    p_status: status,
-    p_note: note || null,
-  });
-  if(res.error){toast(res.error.message||'Status update failed', false);return;}
-  toast('Статус обновлён');
-  await loadOrders(currentWholesalerProfile.id);
+async function completeOrder(orderId){
+  if(pendingOrders.has(orderId)) return;
+  if(!confirm('Завершить заказ?')) return;
+  pendingOrders.add(orderId);
+  orderErrors.delete(orderId);
+  render();
+  try{
+    await PM_CUSTOMER_ORDERS.completeOrder(sb, orderId);
+    toast('Заказ завершён');
+    await loadOrders(currentWholesalerProfile.id);
+  }catch(err){
+    orderErrors.set(orderId, err?.message || 'Завершение не выполнено');
+    toast(err?.message || 'Завершение не выполнено', false);
+  }finally{
+    pendingOrders.delete(orderId);
+    render();
+  }
 }
 </script>
 </body>

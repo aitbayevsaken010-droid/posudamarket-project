@@ -48,6 +48,7 @@
 
 <script>
 let cart = null;
+let checkoutPending = false;
 
 (async()=>{
   try {
@@ -66,17 +67,24 @@ async function loadCart() {
   renderCart();
 }
 
+function syncCheckoutButton() {
+  const btn = document.getElementById('checkout-btn');
+  const hasItems = Boolean((cart?.customer_cart_items || []).length);
+  btn.disabled = checkoutPending || !hasItems;
+  btn.textContent = checkoutPending ? 'Оформляем...' : 'Оформить заказ';
+}
+
 function renderCart() {
   const wrap = document.getElementById('cart-items');
   const items = cart?.customer_cart_items || [];
 
   if (!items.length) {
     wrap.innerHTML = '<div class="empty"><div class="empty-icon">🧺</div>Корзина пуста</div>';
-    document.getElementById('checkout-btn').disabled = true;
+    syncCheckoutButton();
     return;
   }
 
-  document.getElementById('checkout-btn').disabled = false;
+  syncCheckoutButton();
 
   let total = 0;
   wrap.innerHTML = `
@@ -137,17 +145,23 @@ async function removeItem(inventoryItemId) {
 }
 
 async function checkoutCart() {
+  if (checkoutPending) return;
+  if (!cart?.id) {
+    showToast('Корзина не найдена', false);
+    return;
+  }
   if (!confirm('Оформить заказ и зарезервировать остаток?')) return;
-  const btn = document.getElementById('checkout-btn');
-  btn.disabled = true;
+  checkoutPending = true;
+  syncCheckoutButton();
   try {
-    const res = await sb.rpc('pm_checkout_customer_cart');
-    if (res.error) throw res.error;
+    const orderId = await PM_CUSTOMER_ORDERS.checkoutCart(sb, cart.id);
     showToast('Заказ создан, резерв установлен.');
-    window.location.href = `clt-orders.html?order_id=${res.data}`;
+    window.location.href = `clt-orders.html?order_id=${encodeURIComponent(orderId)}`;
   } catch (err) {
     showToast(err?.message || 'Checkout не выполнен', false);
-    btn.disabled = false;
+    checkoutPending = false;
+    syncCheckoutButton();
+    await loadCart();
   }
 }
 </script>

@@ -46,6 +46,7 @@
 let orders = [];
 let orderItems = [];
 let wholesalerMap = new Map();
+let cancelPending = new Set();
 
 (async()=>{
   try {
@@ -61,19 +62,16 @@ let wholesalerMap = new Map();
 })();
 
 async function loadOrders() {
-  const [ordersRes, itemsRes, wholesalerRes] = await Promise.all([
-    sb.from('customer_orders').select('id, wholesaler_id, customer_user_id, status, total_amount, placed_at, created_at, updated_at, cancellation_reason').eq('customer_user_id', currentUser.id).order('created_at', { ascending: false }),
-    sb.from('customer_order_items').select(`id, order_id, product_id, quantity, unit_price, catalog_products(name, article)`).order('created_at', { ascending: false }),
-    sb.from('wholesalers').select('id, display_name, legal_name, user_id'),
+  const [ordersData, wholesalerRes] = await Promise.all([
+    PM_CUSTOMER_ORDERS.loadCustomerOrders(sb, currentUser.id),
+    sb.from('wholesalers').select('id, display_name, user_id'),
   ]);
 
-  if (ordersRes.error) throw ordersRes.error;
-  if (itemsRes.error) throw itemsRes.error;
   if (wholesalerRes.error) throw wholesalerRes.error;
 
-  orders = ordersRes.data || [];
+  orders = ordersData || [];
   const orderIds = new Set(orders.map((o) => o.id));
-  orderItems = (itemsRes.data || []).filter((item) => orderIds.has(item.order_id));
+  orderItems = await PM_CUSTOMER_ORDERS.loadOrderItems(sb, [...orderIds]);
   wholesalerMap = new Map((wholesalerRes.data || []).map((w) => [w.id, w]));
   renderOrders();
 }
@@ -83,9 +81,9 @@ function renderOrders() {
   const wrap = document.getElementById('orders-wrap');
 
   const filtered = orders.filter((order) => {
-    const number = PM_CUSTOMER_ORDERS.formatOrderNumber(order.id).toLowerCase();
+    const number = PM_CUSTOMER_ORDERS.formatOrderNumber(order).toLowerCase();
     const items = orderItems.filter((item) => item.order_id === order.id);
-    const itemHit = items.some((item) => `${item.catalog_products?.name || ''} ${item.catalog_products?.article || ''}`.toLowerCase().includes(term));
+    const itemHit = items.some((item) => `${item.title || ''} ${item.article || ''}`.toLowerCase().includes(term));
     return !term || number.includes(term) || itemHit;
   });
 
@@ -97,13 +95,14 @@ function renderOrders() {
   wrap.innerHTML = filtered.map((order) => {
     const items = orderItems.filter((item) => item.order_id === order.id);
     const canCancel = ['new', 'confirmed'].includes(order.status);
+    const isCancelling = cancelPending.has(order.id);
     const wholesaler = wholesalerMap.get(order.wholesaler_id);
-    const wholesalerName = wholesaler?.display_name || wholesaler?.legal_name || 'Оптовик';
+    const wholesalerName = wholesaler?.display_name || 'Оптовик';
     return `
       <div style="border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
           <div>
-            <div style="font-weight:800">${PM_CUSTOMER_ORDERS.formatOrderNumber(order.id)}</div>
+            <div style="font-weight:800">${PM_CUSTOMER_ORDERS.formatOrderNumber(order)}</div>
             <div style="color:var(--muted);font-size:12px">${esc(wholesalerName)} · ${new Date(order.created_at).toLocaleString('ru-RU')}</div>
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -112,28 +111,30 @@ function renderOrders() {
           </div>
         </div>
         <div style="margin-top:10px">
-          ${items.map((item) => `<div style="display:flex;justify-content:space-between;gap:10px;border-top:1px solid var(--border);padding-top:6px;margin-top:6px"><span>${esc(item.catalog_products?.name || '—')} (${esc(item.catalog_products?.article || '—')})</span><span>${Number(item.quantity || 0)} шт × ${Number(item.unit_price || 0).toFixed(2)} ₸</span></div>`).join('')}
+          ${items.map((item) => `<div style="display:flex;justify-content:space-between;gap:10px;border-top:1px solid var(--border);padding-top:6px;margin-top:6px"><span>${esc(item.title || '—')} (${esc(item.article || '—')})</span><span>${Number(item.quantity || 0)} шт × ${Number(item.unit_price || 0).toFixed(2)} ₸</span></div>`).join('')}
         </div>
         ${order.cancellation_reason ? `<div style="margin-top:8px;color:var(--danger)">Причина отмены: ${esc(order.cancellation_reason)}</div>` : ''}
-        ${canCancel ? `<div style="margin-top:10px"><button class="btn btn-danger btn-sm" onclick="cancelOrder('${order.id}')">Отменить заказ</button></div>` : ''}
+        ${canCancel ? `<div style="margin-top:10px"><button class="btn btn-danger btn-sm" onclick="cancelOrder('${order.id}')" ${isCancelling ? 'disabled' : ''}>${isCancelling ? 'Отменяем...' : 'Отменить заказ'}</button></div>` : ''}
       </div>
     `;
   }).join('');
 }
 
 async function cancelOrder(orderId) {
+  if (cancelPending.has(orderId)) return;
   if (!confirm('Отменить заказ и освободить резерв?')) return;
-  const res = await sb.rpc('pm_set_customer_order_status', {
-    p_order_id: orderId,
-    p_status: 'cancelled',
-    p_note: 'Cancelled by customer',
-  });
-  if (res.error) {
-    showToast(res.error.message || 'Отмена не выполнена', false);
-    return;
+  cancelPending.add(orderId);
+  renderOrders();
+  try {
+    await PM_CUSTOMER_ORDERS.cancelOrder(sb, orderId);
+    showToast('Заказ отменён, резерв возвращён на склад');
+    await loadOrders();
+  } catch (err) {
+    showToast(err?.message || 'Отмена не выполнена', false);
+  } finally {
+    cancelPending.delete(orderId);
+    renderOrders();
   }
-  showToast('Заказ отменён, резерв возвращён на склад');
-  await loadOrders();
 }
 </script>
 </body>
