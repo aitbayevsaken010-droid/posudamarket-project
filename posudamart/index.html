@@ -420,13 +420,13 @@
     <!-- ── НА МОДЕРАЦИИ ── -->
     <div class="step" id="step-pending">
       <div style="text-align:center;padding:8px 0">
-        <div class="pending-icon">⏳</div>
-        <div class="step-title" style="text-align:center">Заявка на проверке</div>
-        <div class="step-sub" style="text-align:center;margin-bottom:20px">
+        <div class="pending-icon" id="moderation-icon">⏳</div>
+        <div class="step-title" id="moderation-title" style="text-align:center">Заявка на проверке</div>
+        <div class="step-sub" id="moderation-message" style="text-align:center;margin-bottom:20px">
           Компания <b id="pending-name"></b> ожидает одобрения.<br>
           Как только администратор одобрит — ты сразу сможешь войти.
         </div>
-        <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:12px;padding:14px;font-size:13px;color:rgba(245,158,11,0.9);text-align:left;margin-bottom:20px">
+        <div id="moderation-note" style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:12px;padding:14px;font-size:13px;color:rgba(245,158,11,0.9);text-align:left;margin-bottom:20px">
           ℹ️ Обычно проверка занимает несколько часов.
         </div>
         <button class="btn btn-ghost" onclick="signOut()">Выйти</button>
@@ -470,6 +470,65 @@ function restorePendingSignupState() {
 function clearPendingSignupState() {
   localStorage.removeItem(REG_EMAIL_STORAGE_KEY);
   localStorage.removeItem(REG_ROLE_STORAGE_KEY);
+}
+
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = String(value ?? '');
+  return div.innerHTML;
+}
+
+function showWholesalerModerationState({ status, displayName, rejectionReason } = {}) {
+  const normalizedStatus = String(status || PM_ENUMS.APPROVAL_STATUSES.PENDING).toLowerCase();
+  const safeName = String(displayName || 'Оптовик').trim() || 'Оптовик';
+  const safeReason = String(rejectionReason || '').trim();
+  const icon = document.getElementById('moderation-icon');
+  const title = document.getElementById('moderation-title');
+  const message = document.getElementById('moderation-message');
+  const note = document.getElementById('moderation-note');
+  const nameEl = document.getElementById('pending-name');
+
+  if (nameEl) nameEl.textContent = safeName;
+
+  if (normalizedStatus === PM_ENUMS.APPROVAL_STATUSES.REJECTED) {
+    if (icon) {
+      icon.textContent = '✕';
+      icon.style.background = 'rgba(239,68,68,0.12)';
+      icon.style.borderColor = 'rgba(239,68,68,0.3)';
+      icon.style.color = 'rgba(239,68,68,0.95)';
+    }
+    if (title) title.textContent = 'Заявка отклонена';
+    if (message) {
+      message.innerHTML = `Заявка на доступ оптовика для <b>${escapeHtml(safeName)}</b> была отклонена.<br>Исправь данные и обратись к администратору.`;
+    }
+    if (note) {
+      note.style.background = 'rgba(239,68,68,0.08)';
+      note.style.borderColor = 'rgba(239,68,68,0.2)';
+      note.style.color = 'rgba(239,68,68,0.95)';
+      note.textContent = safeReason
+        ? `Причина: ${safeReason}`
+        : 'Причина отклонения не указана. Свяжись с администратором.';
+    }
+  } else {
+    if (icon) {
+      icon.textContent = '⏳';
+      icon.style.background = 'rgba(245,158,11,0.12)';
+      icon.style.borderColor = 'rgba(245,158,11,0.3)';
+      icon.style.color = '';
+    }
+    if (title) title.textContent = 'Заявка на проверке';
+    if (message) {
+      message.innerHTML = `Компания <b>${escapeHtml(safeName)}</b> ожидает одобрения.<br>Как только администратор одобрит — ты сразу сможешь войти.`;
+    }
+    if (note) {
+      note.style.background = 'rgba(245,158,11,0.08)';
+      note.style.borderColor = 'rgba(245,158,11,0.2)';
+      note.style.color = 'rgba(245,158,11,0.9)';
+      note.textContent = 'ℹ️ Обычно проверка занимает несколько часов.';
+    }
+  }
+
+  showStep('step-pending');
 }
 
 async function upsertProfileRole(userId, role, email = '') {
@@ -578,10 +637,15 @@ async function redirectByRole(user) {
     return;
   }
   if (profile.role === 'wholesaler') {
-    const approvalStatus = await PM_ACCESS.getApprovalStatus(sb, user.id, profile.role);
+    const moderation = await PM_ACCESS.getWholesalerModerationRecord(sb, user.id);
+    const approvalStatus = moderation?.approvalStatus || PM_ENUMS.APPROVAL_STATUSES.PENDING;
+    const displayName = moderation?.displayName || profile.full_name || (user.email ? user.email.split('@')[0] : 'Оптовик');
     if (approvalStatus !== PM_ENUMS.APPROVAL_STATUSES.APPROVED) {
-      showStep('step-pending');
-      document.getElementById('pending-name').textContent = 'Оптовик';
+      showWholesalerModerationState({
+        status: approvalStatus,
+        displayName,
+        rejectionReason: moderation?.rejectionReason || '',
+      });
       return;
     }
     traceRedirect('wholesaler/wh-dashboard.html', 'role=wholesaler approved');
@@ -602,8 +666,10 @@ async function redirectByRole(user) {
     window.location.href = 'supplier/sup-dashboard.html';
     return;
   }
-  document.getElementById('pending-name').textContent = supplier.name;
-  showStep('step-pending');
+  showWholesalerModerationState({
+    status: PM_ENUMS.APPROVAL_STATUSES.PENDING,
+    displayName: supplier.name,
+  });
 }
 
 // ── Переключение вкладок ──
@@ -748,13 +814,11 @@ document.getElementById('btn-signup').addEventListener('click', async () => {
     } else if (pendingRole === 'supplier') {
       showStep('step-register-profile');
     } else {
-      const { data: { user } } = await sb.auth.getUser();
-      if (user) {
-        await sb.from('wholesalers').upsert({ user_id: user.id, approval_status: 'pending' }, { onConflict: 'user_id' });
-      }
       clearPendingSignupState();
-      document.getElementById('pending-name').textContent = 'Оптовик';
-      showStep('step-pending');
+      showWholesalerModerationState({
+        status: PM_ENUMS.APPROVAL_STATUSES.PENDING,
+        displayName: data.session.user.email ? data.session.user.email.split('@')[0] : 'Оптовик',
+      });
     }
   } else {
     // Нужно подтвердить email — ждём код
@@ -824,13 +888,11 @@ async function confirmEmail() {
   } else if (selectedRole === 'supplier') {
     showStep('step-register-profile');
   } else {
-    const { data: { user } } = await sb.auth.getUser();
-    if (user) {
-      await sb.from('wholesalers').upsert({ user_id: user.id, approval_status: 'pending' }, { onConflict: 'user_id' });
-    }
     clearPendingSignupState();
-    document.getElementById('pending-name').textContent = 'Оптовик';
-    showStep('step-pending');
+    showWholesalerModerationState({
+      status: PM_ENUMS.APPROVAL_STATUSES.PENDING,
+      displayName: data.user.email ? data.user.email.split('@')[0] : 'Оптовик',
+    });
   }
 }
 
@@ -948,8 +1010,10 @@ document.getElementById('btn-register').addEventListener('click', async () => {
   }
 
   clearPendingSignupState();
-  document.getElementById('pending-name').textContent = name;
-  showStep('step-pending');
+  showWholesalerModerationState({
+    status: PM_ENUMS.APPROVAL_STATUSES.PENDING,
+    displayName: name,
+  });
 });
 
 // ══ СБРОС ПАРОЛЯ — через ссылку на email ══

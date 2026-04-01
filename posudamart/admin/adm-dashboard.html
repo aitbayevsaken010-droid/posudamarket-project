@@ -69,6 +69,8 @@
 
 <script src="../shared/admin.js"></script>
 <script>
+let pendingWholesalerApplications = [];
+
 async function onAdminLoggedIn() {
   await loadStats();
   await loadModeration();
@@ -89,30 +91,89 @@ async function loadStats() {
 }
 
 async function loadModeration() {
-  const { data } = await sb.from('suppliers').select('*').eq('status','pending').order('created_at');
-  const pending = data || [];
+  const [supplierRes, wholesalerRes] = await Promise.all([
+    sb.from('suppliers').select('*').eq('status','pending').order('created_at'),
+    sb.from('role_approvals')
+      .select('id,user_id,requested_role,status,requested_at,reviewed_by,reviewed_at,rejection_reason')
+      .eq('requested_role', 'wholesaler')
+      .eq('status', 'pending')
+      .order('requested_at'),
+  ]);
+
+  const pendingSuppliers = supplierRes.data || [];
+  const wholesalerApplications = wholesalerRes.data || [];
+  const wholesalerUserIds = [...new Set(wholesalerApplications.map((item) => item.user_id).filter(Boolean))];
+  const [profilesRes, wholesalerRowsRes] = wholesalerUserIds.length
+    ? await Promise.all([
+      sb.from('profiles').select('id,email,full_name,phone').in('id', wholesalerUserIds),
+      sb.from('wholesalers').select('id,user_id,display_name,approval_status').in('user_id', wholesalerUserIds),
+    ])
+    : [{ data: [], error: null }, { data: [], error: null }];
+
+  const profilesById = new Map((profilesRes.data || []).map((profile) => [profile.id, profile]));
+  const wholesalerByUserId = new Map((wholesalerRowsRes.data || []).map((row) => [row.user_id, row]));
+
+  pendingWholesalerApplications = wholesalerApplications.map((application) => {
+    const profile = profilesById.get(application.user_id) || {};
+    const wholesaler = wholesalerByUserId.get(application.user_id) || {};
+    const fallbackName = (profile.email || '').split('@')[0] || 'Оптовик';
+    return {
+      ...application,
+      profile,
+      wholesaler,
+      display_name: wholesaler.display_name || profile.full_name || fallbackName,
+    };
+  });
+
   const panel = document.getElementById('mod-panel');
   const badge = document.getElementById('mod-badge');
-  if (pending.length) {
+  const totalPending = pendingSuppliers.length + pendingWholesalerApplications.length;
+
+  if (totalPending) {
     badge.style.display = 'inline-block';
-    badge.textContent = '⏳ ' + pending.length + ' заявок';
+    badge.textContent = '⏳ ' + totalPending + ' заявок';
     panel.style.display = '';
-    const modList=document.getElementById('mod-list');
-    modList.innerHTML = pending.map(s => `
-      <div style="background:var(--surface2);border:1px solid var(--border2);border-radius:12px;padding:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px">
-        <div style="width:48px;height:48px;border-radius:10px;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;overflow:hidden">
-          ${sanitizeImageUrl(s.logo||'') ? `<span data-safe-image="${sanitizeImageUrl(s.logo||'')}" data-alt="${esc(s.name||'logo')}"></span>` : '🏭'}
-        </div>
-        <div style="flex:1;min-width:150px">
-          <div style="font-weight:700">${esc(s.name)}</div>
-          <div style="font-size:12px;color:var(--muted)">${esc(s.phone||'')} ${s.whatsapp ? '· WA: '+esc(s.whatsapp) : ''}</div>
-          <div style="font-size:11px;color:var(--muted)">${esc(s.address||'')} · ${new Date(s.created_at).toLocaleDateString('ru-RU')}</div>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-success btn-sm" onclick="moderate('${s.id}','active')">✓ Одобрить</button>
-          <button class="btn btn-danger btn-sm" onclick="moderate('${s.id}','rejected')">✕ Отклонить</button>
-        </div>
-      </div>`).join('');
+    const modList = document.getElementById('mod-list');
+    const supplierHtml = pendingSuppliers.length ? `
+      <div style="margin-bottom:18px">
+        <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Поставщики</div>
+        ${pendingSuppliers.map(s => `
+          <div style="background:var(--surface2);border:1px solid var(--border2);border-radius:12px;padding:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px">
+            <div style="width:48px;height:48px;border-radius:10px;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;overflow:hidden">
+              ${sanitizeImageUrl(s.logo||'') ? `<span data-safe-image="${sanitizeImageUrl(s.logo||'')}" data-alt="${esc(s.name||'logo')}"></span>` : '🏭'}
+            </div>
+            <div style="flex:1;min-width:150px">
+              <div style="font-weight:700">${esc(s.name)}</div>
+              <div style="font-size:12px;color:var(--muted)">${esc(s.phone||'')} ${s.whatsapp ? '· WA: '+esc(s.whatsapp) : ''}</div>
+              <div style="font-size:11px;color:var(--muted)">${esc(s.address||'')} · ${new Date(s.created_at).toLocaleDateString('ru-RU')}</div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-success btn-sm" onclick="moderateSupplier('${s.id}','active')">✓ Одобрить</button>
+              <button class="btn btn-danger btn-sm" onclick="moderateSupplier('${s.id}','rejected')">✕ Отклонить</button>
+            </div>
+          </div>`).join('')}
+      </div>` : '';
+
+    const wholesalerHtml = pendingWholesalerApplications.length ? `
+      <div>
+        <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Оптовики</div>
+        ${pendingWholesalerApplications.map((app) => `
+          <div style="background:var(--surface2);border:1px solid var(--border2);border-radius:12px;padding:14px;display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:10px">
+            <div style="width:48px;height:48px;border-radius:10px;background:rgba(79,110,247,0.12);border:1px solid rgba(79,110,247,0.25);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🏬</div>
+            <div style="flex:1;min-width:180px">
+              <div style="font-weight:700">${esc(app.display_name)}</div>
+              <div style="font-size:12px;color:var(--muted)">${esc(app.profile.email || '—')}</div>
+              <div style="font-size:12px;color:var(--muted)">${esc(app.profile.full_name || 'Без имени')} ${app.profile.phone ? '· ' + esc(app.profile.phone) : ''}</div>
+              <div style="font-size:11px;color:var(--muted)">Заявка от ${new Date(app.requested_at).toLocaleString('ru-RU')}</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <button class="btn btn-success btn-sm" onclick="approveWholesalerApplication('${app.id}')">Approve</button>
+              <button class="btn btn-danger btn-sm" onclick="rejectWholesalerApplication('${app.id}')">Reject</button>
+            </div>
+          </div>`).join('')}
+      </div>` : '';
+
+    modList.innerHTML = supplierHtml + wholesalerHtml;
     modList.querySelectorAll('[data-safe-image]').forEach(host=>{
       const img=document.createElement('img');
       img.src=host.dataset.safeImage;
@@ -129,7 +190,7 @@ async function loadModeration() {
   }
 }
 
-async function moderate(id, status) {
+async function moderateSupplier(id, status) {
   if (!confirm(status==='active' ? 'Одобрить поставщика?' : 'Отклонить поставщика?')) return;
   const { error } = await sb.from('suppliers').update({status}).eq('id',id);
   if (error) return showToast(error.message, false);
@@ -138,10 +199,67 @@ async function moderate(id, status) {
   await loadStats();
 }
 
-sb.channel('rt-pending').on('postgres_changes',
-  {event:'INSERT',schema:'public',table:'suppliers',filter:'status=eq.pending'},
-  () => { loadModeration(); showToast('🔔 Новая заявка от поставщика'); }
-).subscribe();
+function getWholesalerApplication(id) {
+  return pendingWholesalerApplications.find((item) => item.id === id) || null;
+}
+
+async function approveWholesalerApplication(applicationId) {
+  const application = getWholesalerApplication(applicationId);
+  if (!application) return showToast('Заявка не найдена', false);
+  const proposedName = application.display_name || 'Оптовик';
+  const displayName = prompt('Display name для оптовика', proposedName);
+  if (displayName === null) return;
+
+  const { error } = await sb.rpc('review_role_application', {
+    p_application_id: applicationId,
+    p_decision: 'approved',
+    p_display_name: displayName.trim() || proposedName,
+    p_rejection_reason: null,
+  });
+
+  if (error) return showToast(error.message, false);
+  showToast('✓ Заявка оптовика одобрена');
+  await loadModeration();
+  await loadStats();
+}
+
+async function rejectWholesalerApplication(applicationId) {
+  const application = getWholesalerApplication(applicationId);
+  if (!application) return showToast('Заявка не найдена', false);
+  const reason = prompt('Причина отклонения', application.rejection_reason || '');
+  if (reason === null) return;
+
+  const { error } = await sb.rpc('review_role_application', {
+    p_application_id: applicationId,
+    p_decision: 'rejected',
+    p_display_name: null,
+    p_rejection_reason: reason.trim() || null,
+  });
+
+  if (error) return showToast(error.message, false);
+  showToast('✕ Заявка оптовика отклонена');
+  await loadModeration();
+  await loadStats();
+}
+
+sb.channel('rt-moderation')
+  .on('postgres_changes',
+    {event:'INSERT',schema:'public',table:'suppliers',filter:'status=eq.pending'},
+    () => { loadModeration(); showToast('🔔 Новая заявка от поставщика'); }
+  )
+  .on('postgres_changes',
+    {event:'INSERT',schema:'public',table:'role_approvals',filter:'requested_role=eq.wholesaler'},
+    () => { loadModeration(); showToast('🔔 Новая заявка от оптовика'); }
+  )
+  .on('postgres_changes',
+    {event:'*',schema:'public',table:'wholesalers'},
+    () => { loadModeration(); }
+  )
+  .on('postgres_changes',
+    {event:'*',schema:'public',table:'role_approvals'},
+    () => { loadModeration(); }
+  )
+  .subscribe();
 
 
 // Auto-run auth check

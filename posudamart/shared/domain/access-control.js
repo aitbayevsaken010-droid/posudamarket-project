@@ -21,23 +21,80 @@
     return normalized === PM_ENUMS.ROLES.SUPPLIER || normalized === PM_ENUMS.ROLES.WHOLESALER;
   }
 
+  async function getLatestRoleApproval(sb, userId, role) {
+    const normalizedRole = normalizeRole(role);
+    if (!requiresManualApproval(normalizedRole)) {
+      return null;
+    }
+
+    const approvalRes = await sb
+      .from('role_approvals')
+      .select('id, user_id, requested_role, status, requested_at, reviewed_by, reviewed_at, rejection_reason')
+      .eq('user_id', userId)
+      .eq('requested_role', normalizedRole)
+      .order('requested_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (approvalRes.error) {
+      return null;
+    }
+
+    return approvalRes.data || null;
+  }
+
+  async function getWholesalerModerationRecord(sb, userId) {
+    const [approval, wholesalerRes] = await Promise.all([
+      getLatestRoleApproval(sb, userId, PM_ENUMS.ROLES.WHOLESALER),
+      sb
+        .from('wholesalers')
+        .select('id, user_id, display_name, approval_status, created_at, updated_at')
+        .eq('user_id', userId)
+        .maybeSingle(),
+    ]);
+
+    const wholesaler = wholesalerRes.error ? null : (wholesalerRes.data || null);
+    const approvalStatus = (() => {
+      const applicationStatus = String(approval?.status || '').toLowerCase();
+      const wholesalerStatus = String(wholesaler?.approval_status || '').toLowerCase();
+
+      if (applicationStatus === PM_ENUMS.APPROVAL_STATUSES.REJECTED || wholesalerStatus === PM_ENUMS.APPROVAL_STATUSES.REJECTED) {
+        return PM_ENUMS.APPROVAL_STATUSES.REJECTED;
+      }
+      if (wholesalerStatus === PM_ENUMS.APPROVAL_STATUSES.APPROVED) {
+        return PM_ENUMS.APPROVAL_STATUSES.APPROVED;
+      }
+      if (applicationStatus === PM_ENUMS.APPROVAL_STATUSES.APPROVED) {
+        return PM_ENUMS.APPROVAL_STATUSES.PENDING;
+      }
+      if (applicationStatus === PM_ENUMS.APPROVAL_STATUSES.PENDING || wholesalerStatus === PM_ENUMS.APPROVAL_STATUSES.PENDING) {
+        return PM_ENUMS.APPROVAL_STATUSES.PENDING;
+      }
+      return PM_ENUMS.APPROVAL_STATUSES.PENDING;
+    })();
+
+    return {
+      application: approval,
+      wholesaler,
+      approvalStatus,
+      rejectionReason: approval?.rejection_reason || null,
+      displayName: wholesaler?.display_name || '',
+    };
+  }
+
   async function getApprovalStatus(sb, userId, role) {
     const normalizedRole = normalizeRole(role);
     if (!requiresManualApproval(normalizedRole)) {
       return PM_ENUMS.APPROVAL_STATUSES.NOT_REQUIRED;
     }
 
-    const approvalRes = await sb
-      .from('role_approvals')
-      .select('status')
-      .eq('user_id', userId)
-      .eq('requested_role', normalizedRole)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (!approvalRes.error && approvalRes.data?.status) {
-      return approvalRes.data.status;
+    const approval = await getLatestRoleApproval(sb, userId, normalizedRole);
+    if (approval?.status) {
+      if (normalizedRole === PM_ENUMS.ROLES.WHOLESALER && String(approval.status).toLowerCase() === PM_ENUMS.APPROVAL_STATUSES.APPROVED) {
+        const moderation = await getWholesalerModerationRecord(sb, userId);
+        return moderation.approvalStatus;
+      }
+      return String(approval.status || '').toLowerCase();
     }
 
     // Backward compatibility for legacy supplier flow.
@@ -57,15 +114,8 @@
 
     // Backward compatibility for legacy wholesaler flow.
     if (normalizedRole === PM_ENUMS.ROLES.WHOLESALER) {
-      const wholesalerRes = await sb
-        .from('wholesalers')
-        .select('approval_status')
-        .eq('user_id', userId)
-        .maybeSingle();
-
-      if (!wholesalerRes.error && wholesalerRes.data?.approval_status) {
-        return String(wholesalerRes.data.approval_status || '').toLowerCase();
-      }
+      const moderation = await getWholesalerModerationRecord(sb, userId);
+      return moderation.approvalStatus;
     }
 
     return PM_ENUMS.APPROVAL_STATUSES.PENDING;
@@ -87,13 +137,18 @@
     }
 
     const normalizedRole = normalizeRole(profileRes.data.role);
-    const approvalStatus = await getApprovalStatus(sb, session.user.id, normalizedRole);
+    const moderation = normalizedRole === PM_ENUMS.ROLES.WHOLESALER
+      ? await getWholesalerModerationRecord(sb, session.user.id)
+      : null;
+    const approvalStatus = moderation?.approvalStatus || await getApprovalStatus(sb, session.user.id, normalizedRole);
 
     return {
       user: session.user,
       profile: profileRes.data,
       role: normalizedRole,
       approvalStatus,
+      moderation,
+      rejectionReason: moderation?.rejectionReason || null,
       isApproved: approvalStatus === PM_ENUMS.APPROVAL_STATUSES.APPROVED || approvalStatus === PM_ENUMS.APPROVAL_STATUSES.NOT_REQUIRED,
     };
   }
@@ -113,6 +168,8 @@
   window.PM_ACCESS = Object.freeze({
     normalizeRole,
     requiresManualApproval,
+    getLatestRoleApproval,
+    getWholesalerModerationRecord,
     getApprovalStatus,
     loadAccessContext,
     hasRouteAccess,
